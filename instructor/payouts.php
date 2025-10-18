@@ -1,33 +1,53 @@
 <?php
+
+/**
+ * Payouts Management Page - Bilingual Version
+ * Professional LMS Interface with Language Support
+ */
+
+// ============================================================================
+// INITIALIZATION & SECURITY
+// ============================================================================
+
+ob_start();
+require_once '../includes/language_handler.php';
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/function.php';
-require_role('instructor');
+require_once '../includes/i18n.php';
 
+require_role('instructor');
 $instructor_id = $_SESSION['user_id'];
-$filter_status = $_GET['status'] ?? '';
-$filter_year = $_GET['year'] ?? date('Y');
-$sort_by = $_GET['sort'] ?? 'recent';
+
+// ============================================================================
+// DATA PROCESSING
+// ============================================================================
+
+$filters = [
+    'status' => $_GET['status'] ?? '',
+    'year' => $_GET['year'] ?? date('Y'),
+    'sort' => $_GET['sort'] ?? 'recent'
+];
 
 try {
     // Build query with filters
     $where_conditions = ["instructor_id = ?"];
     $params = [$instructor_id];
 
-    if ($filter_status) {
+    if ($filters['status']) {
         $where_conditions[] = "status = ?";
-        $params[] = $filter_status;
+        $params[] = $filters['status'];
     }
 
-    if ($filter_year) {
+    if ($filters['year']) {
         $where_conditions[] = "YEAR(created_at) = ?";
-        $params[] = $filter_year;
+        $params[] = $filters['year'];
     }
 
     $where_clause = implode(" AND ", $where_conditions);
 
     // Determine sort order
-    $order_by = match($sort_by) {
+    $order_by = match ($filters['sort']) {
         'recent' => 'created_at DESC',
         'oldest' => 'created_at ASC',
         'amount' => 'amount DESC',
@@ -35,7 +55,7 @@ try {
         default => 'created_at DESC'
     };
 
-    // Get payouts with comprehensive data
+    // Get payouts
     $stmt = $pdo->prepare("
         SELECT 
             id,
@@ -68,7 +88,7 @@ try {
     $stmt->execute([$instructor_id]);
     $stats = $stmt->fetch();
 
-    // Get monthly payout data for chart
+    // Get monthly payout data
     $stmt = $pdo->prepare("
         SELECT 
             DATE_FORMAT(created_at, '%Y-%m') as month,
@@ -80,10 +100,10 @@ try {
         GROUP BY DATE_FORMAT(created_at, '%Y-%m')
         ORDER BY month ASC
     ");
-    $stmt->execute([$instructor_id, $filter_year]);
+    $stmt->execute([$instructor_id, $filters['year']]);
     $monthly_data = $stmt->fetchAll();
 
-    // Get available balance (earnings - payouts)
+    // Get available balance
     $stmt = $pdo->prepare("
         SELECT 
             COALESCE(SUM(oi.price * oi.quantity), 0) as total_earnings,
@@ -96,400 +116,770 @@ try {
     ");
     $stmt->execute([$instructor_id]);
     $balance_data = $stmt->fetch();
-    
-    $available_balance = $balance_data['total_earnings'] - $balance_data['total_payouts'];
 
+    $available_balance = $balance_data['total_earnings'] - $balance_data['total_payouts'];
 } catch (PDOException $e) {
-    error_log("Database error in payouts: " . $e->getMessage());
+    error_log("Payouts Error: " . $e->getMessage());
     $payouts = [];
-    $stats = ['total_payouts' => 0, 'total_amount' => 0, 'approved_payouts' => 0, 'pending_payouts' => 0, 'rejected_payouts' => 0, 'avg_payout' => 0];
+    $stats = [
+        'total_payouts' => 0,
+        'total_amount' => 0,
+        'approved_payouts' => 0,
+        'pending_payouts' => 0,
+        'rejected_payouts' => 0,
+        'avg_payout' => 0
+    ];
     $monthly_data = [];
+    $balance_data = [
+        'total_earnings' => 0,
+        'total_payouts' => 0
+    ];
     $available_balance = 0;
 }
+
 ?>
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mes paiements | TaaBia</title>
+    <title><?= __('payouts') ?> | TaaBia</title>
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="instructor-styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link rel="stylesheet" href="instructor-styles.css">
+    <link rel="stylesheet" href="../includes/instructor_sidebar.css">
+
+    <style>
+        /* Professional LMS Payouts Design */
+        .instructor-main {
+            margin-left: 280px;
+            padding: var(--spacing-8);
+            background-color: var(--gray-50);
+            min-height: 100vh;
+        }
+
+        @media (max-width: 1024px) {
+            .instructor-main {
+                margin-left: 0;
+                padding: var(--spacing-4);
+            }
+        }
+
+        .page-header {
+            background: white;
+            padding: 2rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            margin-bottom: 2rem;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .page-header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .page-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin: 0 0 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .page-title i {
+            color: var(--primary-color);
+        }
+
+        .page-subtitle {
+            color: var(--gray-600);
+            font-size: 1rem;
+            margin: 0;
+        }
+
+        .page-actions {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        /* Balance Card */
+        .balance-card {
+            background: linear-gradient(135deg, var(--success-color), var(--success-dark));
+            padding: 2rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            margin-bottom: 2rem;
+            color: white;
+        }
+
+        .balance-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 0.5rem;
+        }
+
+        .balance-amount {
+            font-size: 3rem;
+            font-weight: 800;
+            margin: 0.5rem 0;
+        }
+
+        .balance-info {
+            display: flex;
+            gap: 2rem;
+            margin-top: 1rem;
+        }
+
+        .balance-info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .balance-info-label {
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .balance-info-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        /* Statistics Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            border-left: 4px solid var(--primary-color);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .stat-card.approved {
+            border-left-color: var(--success-color);
+        }
+
+        .stat-card.pending {
+            border-left-color: var(--warning-color);
+        }
+
+        .stat-card.rejected {
+            border-left-color: var(--danger-color);
+        }
+
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            color: white;
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+        }
+
+        .stat-icon.approved {
+            background: linear-gradient(135deg, var(--success-color), var(--success-dark));
+        }
+
+        .stat-icon.pending {
+            background: linear-gradient(135deg, var(--warning-color), var(--warning-dark));
+        }
+
+        .stat-icon.rejected {
+            background: linear-gradient(135deg, var(--danger-color), #c81e1e);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin: 0 0 0.25rem 0;
+        }
+
+        .stat-label {
+            color: var(--gray-600);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        /* Chart Section */
+        .chart-container {
+            background: white;
+            padding: 1.5rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            margin-bottom: 2rem;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--gray-900);
+            margin: 0;
+        }
+
+        /* Filters Section */
+        .filters-section {
+            background: white;
+            padding: 1.5rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            margin-bottom: 2rem;
+        }
+
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            align-items: end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--gray-700);
+        }
+
+        .filter-input {
+            padding: 0.75rem;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .filter-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 1.25rem;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-success {
+            background: var(--success-color);
+            color: white;
+            box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+        }
+
+        .btn-success:hover {
+            background: var(--success-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-outline {
+            background: white;
+            color: var(--primary-color);
+            border: 1px solid var(--primary-color);
+        }
+
+        .btn-outline:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        /* Payouts Table */
+        .payouts-table-container {
+            background: white;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .table-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .table-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--gray-900);
+            margin: 0;
+        }
+
+        .payouts-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .payouts-table th {
+            background: var(--gray-50);
+            padding: 1rem 1.5rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--gray-700);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .payouts-table td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--gray-100);
+            color: var(--gray-900);
+            vertical-align: middle;
+        }
+
+        .payouts-table tbody tr:hover {
+            background: var(--gray-50);
+        }
+
+        /* Status Badges */
+        .status-badge {
+            padding: 0.375rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .status-approved {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+        }
+
+        .status-pending {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning-color);
+        }
+
+        .status-rejected {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: var(--gray-500);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .empty-state h3 {
+            color: var(--gray-700);
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .page-header-content {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .filters-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .balance-info {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .payouts-table {
+                font-size: 0.85rem;
+            }
+
+            .payouts-table th,
+            .payouts-table td {
+                padding: 0.75rem 0.5rem;
+            }
+        }
+    </style>
 </head>
 
 <body>
     <div class="instructor-layout">
         <!-- Sidebar -->
-        <div class="instructor-sidebar">
-            <div class="instructor-sidebar-header">
-                <h2><i class="fas fa-chalkboard-teacher"></i> TaaBia</h2>
-                <p>Espace Formateur</p>
-            </div>
-            
-            <nav class="instructor-nav">
-                <a href="index.php" class="instructor-nav-item">
-                    <i class="fas fa-tachometer-alt"></i>
-                    Dashboard
-                </a>
-                <a href="my_courses.php" class="instructor-nav-item">
-                    <i class="fas fa-book"></i>
-                    Mes cours
-                </a>
-                <a href="add_course.php" class="instructor-nav-item">
-                    <i class="fas fa-plus-circle"></i>
-                    Nouveau cours
-                </a>
-                <a href="add_lesson.php" class="instructor-nav-item">
-                    <i class="fas fa-play-circle"></i>
-                    Ajouter une leçon
-                </a>
-                <a href="students.php" class="instructor-nav-item">
-                    <i class="fas fa-users"></i>
-                    Mes étudiants
-                </a>
-                <a href="validate_submissions.php" class="instructor-nav-item">
-                    <i class="fas fa-check-circle"></i>
-                    Devoirs à valider
-                </a>
-                <a href="earnings.php" class="instructor-nav-item">
-                    <i class="fas fa-chart-line"></i>
-                    Mes gains
-                </a>
-                <a href="transactions.php" class="instructor-nav-item">
-                    <i class="fas fa-shopping-cart"></i>
-                    Transactions
-                </a>
-                <a href="payouts.php" class="instructor-nav-item active">
-                    <i class="fas fa-money-bill-wave"></i>
-                    Paiements
-                </a>
-                <a href="../auth/logout.php" class="instructor-nav-item">
-                    <i class="fas fa-sign-out-alt"></i>
-                    Déconnexion
-                </a>
-            </nav>
-        </div>
+        <?php include '../includes/instructor_sidebar.php'; ?>
 
         <!-- Main Content -->
         <div class="instructor-main">
-            <div class="instructor-header">
-                <h1>Mes paiements</h1>
-                <p>Gérez vos paiements et demandes de retrait</p>
+            <!-- Page Header -->
+            <header class="page-header">
+                <div class="page-header-content">
+                    <div>
+                        <h1 class="page-title">
+                            <i class="fas fa-money-bill-wave"></i>
+                            <?= __('payouts') ?>
+                        </h1>
+                        <p class="page-subtitle"><?= __('manage_your_payout_requests') ?></p>
+                    </div>
+                    <div class="page-actions">
+                        <button class="btn btn-outline" onclick="refreshData()">
+                            <i class="fas fa-sync-alt"></i> <?= __('refresh') ?>
+                        </button>
+                        <button class="btn btn-success" onclick="requestPayout()">
+                            <i class="fas fa-plus"></i> <?= __('request_payout') ?>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Available Balance Card -->
+            <div class="balance-card">
+                <div class="balance-label"><?= __('available_balance') ?></div>
+                <div class="balance-amount">$<?= number_format($available_balance, 2) ?></div>
+                <div class="balance-info">
+                    <div class="balance-info-item">
+                        <span class="balance-info-label"><?= __('total_earnings') ?></span>
+                        <span class="balance-info-value">$<?= number_format($balance_data['total_earnings'], 2) ?></span>
+                    </div>
+                    <div class="balance-info-item">
+                        <span class="balance-info-label"><?= __('total_paid_out') ?></span>
+                        <span class="balance-info-value">$<?= number_format($balance_data['total_payouts'], 2) ?></span>
+                    </div>
+                </div>
             </div>
 
-            <!-- Balance and Statistics Cards -->
-            <div class="instructor-cards" style="margin-bottom: var(--spacing-6);">
-                <div class="instructor-card">
-                    <div class="instructor-card-header">
-                        <div class="instructor-card-icon success">
-                            <i class="fas fa-wallet"></i>
-                        </div>
-                    </div>
-                    <div class="instructor-card-title">Solde disponible</div>
-                    <div class="instructor-card-value"><?= number_format($available_balance, 2) ?> GHS</div>
-                    <div class="instructor-card-description">Montant disponible</div>
-                </div>
-
-                <div class="instructor-card">
-                    <div class="instructor-card-header">
-                        <div class="instructor-card-icon primary">
-                            <i class="fas fa-money-bill-wave"></i>
-                        </div>
-                    </div>
-                    <div class="instructor-card-title">Total payouts</div>
-                    <div class="instructor-card-value"><?= number_format($stats['total_amount'], 2) ?> GHS</div>
-                    <div class="instructor-card-description">Tous paiements</div>
-                </div>
-
-                <div class="instructor-card">
-                    <div class="instructor-card-header">
-                        <div class="instructor-card-icon info">
+            <!-- Statistics Grid -->
+            <div class="stats-grid">
+                <div class="stat-card approved">
+                    <div class="stat-header">
+                        <div class="stat-icon approved">
                             <i class="fas fa-check-circle"></i>
                         </div>
                     </div>
-                    <div class="instructor-card-title">Payouts approuvés</div>
-                    <div class="instructor-card-value"><?= $stats['approved_payouts'] ?></div>
-                    <div class="instructor-card-description">Paiements traités</div>
+                    <div class="stat-value"><?= number_format($stats['approved_payouts'] ?? 0) ?></div>
+                    <div class="stat-label"><?= __('approved_payouts') ?></div>
                 </div>
 
-                <div class="instructor-card">
-                    <div class="instructor-card-header">
-                        <div class="instructor-card-icon warning">
+                <div class="stat-card pending">
+                    <div class="stat-header">
+                        <div class="stat-icon pending">
                             <i class="fas fa-clock"></i>
                         </div>
                     </div>
-                    <div class="instructor-card-title">En attente</div>
-                    <div class="instructor-card-value"><?= $stats['pending_payouts'] ?></div>
-                    <div class="instructor-card-description">Paiements en cours</div>
+                    <div class="stat-value"><?= number_format($stats['pending_payouts'] ?? 0) ?></div>
+                    <div class="stat-label"><?= __('pending_payouts') ?></div>
                 </div>
-            </div>
 
-            <!-- Request Payout Button -->
-            <?php if ($available_balance > 0): ?>
-                <div class="instructor-table-container" style="margin-bottom: var(--spacing-6);">
-                    <div style="padding: var(--spacing-6);">
-                        <div style="
-                            background: var(--success-color); 
-                            color: var(--white); 
-                            padding: var(--spacing-6); 
-                            border-radius: var(--radius-lg);
-                            text-align: center;
-                        ">
-                            <h3 style="margin: 0 0 var(--spacing-3) 0; color: var(--white);">
-                                <i class="fas fa-gift"></i> Solde disponible pour retrait
-                            </h3>
-                            <p style="margin: 0 0 var(--spacing-4) 0; opacity: 0.9;">
-                                Vous avez <?= number_format($available_balance, 2) ?> GHS disponibles pour retrait.
-                            </p>
-                            <a href="request_payout.php" class="instructor-btn" style="
-                                background: var(--white); 
-                                color: var(--success-color); 
-                                padding: var(--spacing-3) var(--spacing-6);
-                                font-weight: 600;
-                            ">
-                                <i class="fas fa-plus"></i>
-                                Demander un paiement
-                            </a>
+                <div class="stat-card rejected">
+                    <div class="stat-header">
+                        <div class="stat-icon rejected">
+                            <i class="fas fa-times-circle"></i>
                         </div>
                     </div>
+                    <div class="stat-value"><?= number_format($stats['rejected_payouts'] ?? 0) ?></div>
+                    <div class="stat-label"><?= __('rejected_payouts') ?></div>
                 </div>
-            <?php endif; ?>
 
-            <!-- Search and Filters -->
-            <div class="instructor-table-container" style="margin-bottom: var(--spacing-6);">
-                <div style="padding: var(--spacing-6); border-bottom: 1px solid var(--gray-200);">
-                    <h3 style="margin: 0; color: var(--gray-900); font-size: var(--font-size-lg);">
-                        <i class="fas fa-search"></i> Recherche et filtres
-                    </h3>
-                </div>
-                
-                <div style="padding: var(--spacing-6);">
-                    <form method="GET" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-4);">
-                        <div class="instructor-form-group">
-                            <label class="instructor-form-label">
-                                <i class="fas fa-filter"></i> Statut
-                            </label>
-                            <select name="status" class="instructor-form-input instructor-form-select">
-                                <option value="">Tous les statuts</option>
-                                <option value="pending" <?= $filter_status == 'pending' ? 'selected' : '' ?>>En attente</option>
-                                <option value="approved" <?= $filter_status == 'approved' ? 'selected' : '' ?>>Approuvés</option>
-                                <option value="rejected" <?= $filter_status == 'rejected' ? 'selected' : '' ?>>Rejetés</option>
-                            </select>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon">
+                            <i class="fas fa-chart-line"></i>
                         </div>
-                        
-                        <div class="instructor-form-group">
-                            <label class="instructor-form-label">
-                                <i class="fas fa-calendar"></i> Année
-                            </label>
-                            <select name="year" class="instructor-form-input instructor-form-select">
-                                <?php for ($year = date('Y'); $year >= date('Y') - 3; $year--): ?>
-                                    <option value="<?= $year ?>" <?= $filter_year == $year ? 'selected' : '' ?>>
-                                        <?= $year ?>
-                                    </option>
-                                <?php endfor; ?>
-                            </select>
-                        </div>
-                        
-                        <div class="instructor-form-group">
-                            <label class="instructor-form-label">
-                                <i class="fas fa-sort"></i> Trier par
-                            </label>
-                            <select name="sort" class="instructor-form-input instructor-form-select">
-                                <option value="recent" <?= $sort_by == 'recent' ? 'selected' : '' ?>>Plus récents</option>
-                                <option value="oldest" <?= $sort_by == 'oldest' ? 'selected' : '' ?>>Plus anciens</option>
-                                <option value="amount" <?= $sort_by == 'amount' ? 'selected' : '' ?>>Montant</option>
-                                <option value="status" <?= $sort_by == 'status' ? 'selected' : '' ?>>Statut</option>
-                            </select>
-                        </div>
-                        
-                        <div style="display: flex; gap: var(--spacing-2); align-items: end;">
-                            <button type="submit" class="instructor-btn instructor-btn-primary">
-                                <i class="fas fa-search"></i>
-                                Filtrer
-                            </button>
-                            
-                            <a href="payouts.php" class="instructor-btn instructor-btn-secondary">
-                                <i class="fas fa-times"></i>
-                                Réinitialiser
-                            </a>
-                        </div>
-                    </form>
+                    </div>
+                    <div class="stat-value">$<?= number_format($stats['avg_payout'] ?? 0, 2) ?></div>
+                    <div class="stat-label"><?= __('average_payout') ?></div>
                 </div>
             </div>
 
-            <!-- Payouts Chart -->
-            <div class="instructor-table-container" style="margin-bottom: var(--spacing-6);">
-                <div style="padding: var(--spacing-6); border-bottom: 1px solid var(--gray-200);">
-                    <h3 style="margin: 0; color: var(--gray-900); font-size: var(--font-size-lg);">
-                        <i class="fas fa-chart-bar"></i> Évolution des paiements (<?= $filter_year ?>)
-                    </h3>
+            <!-- Monthly Payouts Chart -->
+            <div class="chart-container">
+                <div class="chart-header">
+                    <h3 class="chart-title"><?= __('monthly_payouts') ?></h3>
                 </div>
-                
-                <div style="padding: var(--spacing-6);">
-                    <canvas id="payoutsChart" style="width: 100%; height: 300px;"></canvas>
+                <div style="position: relative; height: 300px;">
+                    <canvas id="payoutsChart"></canvas>
                 </div>
             </div>
 
-            <!-- Payouts List -->
-            <div class="instructor-table-container">
-                <div style="padding: var(--spacing-6); border-bottom: 1px solid var(--gray-200);">
-                    <h3 style="margin: 0; color: var(--gray-900); font-size: var(--font-size-lg);">
-                        <i class="fas fa-list"></i> Historique des paiements (<?= count($payouts) ?>)
-                    </h3>
+            <!-- Filters Section -->
+            <div class="filters-section">
+                <form method="GET" class="filters-grid">
+                    <div class="filter-group">
+                        <label class="filter-label"><?= __('filter_by_status') ?></label>
+                        <select name="status" class="filter-input">
+                            <option value=""><?= __('all_statuses') ?></option>
+                            <option value="approved" <?= $filters['status'] == 'approved' ? 'selected' : '' ?>>
+                                <?= __('approved') ?>
+                            </option>
+                            <option value="pending" <?= $filters['status'] == 'pending' ? 'selected' : '' ?>>
+                                <?= __('pending') ?>
+                            </option>
+                            <option value="rejected" <?= $filters['status'] == 'rejected' ? 'selected' : '' ?>>
+                                <?= __('rejected') ?>
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label class="filter-label"><?= __('filter_by_year') ?></label>
+                        <select name="year" class="filter-input">
+                            <?php for ($year = date('Y'); $year >= 2020; $year--): ?>
+                                <option value="<?= $year ?>" <?= $filters['year'] == $year ? 'selected' : '' ?>>
+                                    <?= $year ?>
+                                </option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label class="filter-label"><?= __('sort_by') ?></label>
+                        <select name="sort" class="filter-input">
+                            <option value="recent" <?= $filters['sort'] == 'recent' ? 'selected' : '' ?>>
+                                <?= __('most_recent') ?>
+                            </option>
+                            <option value="oldest" <?= $filters['sort'] == 'oldest' ? 'selected' : '' ?>>
+                                <?= __('oldest_first') ?>
+                            </option>
+                            <option value="amount" <?= $filters['sort'] == 'amount' ? 'selected' : '' ?>>
+                                <?= __('highest_amount') ?>
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-filter"></i> <?= __('apply_filters') ?>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Payouts Table -->
+            <div class="payouts-table-container">
+                <div class="table-header">
+                    <h3 class="table-title"><?= __('payout_history') ?></h3>
+                    <div>
+                        <span style="color: var(--gray-600); font-size: 0.9rem;">
+                            <?= count($payouts) ?> <?= __('payouts_found') ?>
+                        </span>
+                    </div>
                 </div>
-                
-                <?php if (count($payouts) === 0): ?>
-                    <div style="padding: var(--spacing-8); text-align: center; color: var(--gray-500);">
-                        <i class="fas fa-money-bill-wave" style="font-size: 3rem; margin-bottom: var(--spacing-4); opacity: 0.5;"></i>
-                        <h3 style="margin: 0 0 var(--spacing-2) 0; color: var(--gray-600);">
-                            Aucun paiement trouvé
-                        </h3>
-                        <p style="margin: 0; color: var(--gray-500);">
-                            <?= $filter_status || $filter_year != date('Y') ? 'Aucun paiement ne correspond à vos critères de recherche.' : 'Aucun paiement effectué pour l\'instant.' ?>
-                        </p>
-                        <?php if ($filter_status || $filter_year != date('Y')): ?>
-                            <a href="payouts.php" class="instructor-btn instructor-btn-primary" style="margin-top: var(--spacing-4);">
-                                <i class="fas fa-times"></i>
-                                Réinitialiser les filtres
-                            </a>
-                        <?php endif; ?>
+
+                <?php if (empty($payouts)): ?>
+                    <div class="empty-state">
+                        <i class="fas fa-money-bill-wave"></i>
+                        <h3><?= __('no_payouts_found') ?></h3>
+                        <p><?= __('request_your_first_payout') ?></p>
                     </div>
                 <?php else: ?>
-                    <div style="padding: var(--spacing-6);">
-                        <div class="instructor-table">
-                            <table>
-                                <thead>
+                    <div style="overflow-x: auto;">
+                        <table class="payouts-table">
+                            <thead>
+                                <tr>
+                                    <th><?= __('payout_id') ?></th>
+                                    <th><?= __('amount') ?></th>
+                                    <th><?= __('payment_method') ?></th>
+                                    <th><?= __('transaction_ref') ?></th>
+                                    <th><?= __('requested_date') ?></th>
+                                    <th><?= __('processed_date') ?></th>
+                                    <th><?= __('status') ?></th>
+                                    <th><?= __('actions') ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($payouts as $payout): ?>
                                     <tr>
-                                        <th>ID</th>
-                                        <th>Montant</th>
-                                        <th>Méthode</th>
-                                        <th>Référence</th>
-                                        <th>Statut</th>
-                                        <th>Date de demande</th>
-                                        <th>Date de traitement</th>
-                                        <th>Notes</th>
+                                        <td>
+                                            <strong>#<?= htmlspecialchars($payout['id']) ?></strong>
+                                        </td>
+                                        <td>
+                                            <strong>$<?= number_format($payout['amount'], 2) ?></strong>
+                                        </td>
+                                        <td>
+                                            <?= htmlspecialchars($payout['method'] ?? __('not_specified')) ?>
+                                        </td>
+                                        <td>
+                                            <?= htmlspecialchars($payout['transaction_ref'] ?? '-') ?>
+                                        </td>
+                                        <td>
+                                            <?= date('M j, Y', strtotime($payout['created_at'])) ?>
+                                        </td>
+                                        <td>
+                                            <?= $payout['processed_at'] ? date('M j, Y', strtotime($payout['processed_at'])) : '-' ?>
+                                        </td>
+                                        <td>
+                                            <span class="status-badge status-<?= $payout['status'] ?>">
+                                                <?= __($payout['status']) ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.85rem;"
+                                                onclick="viewDetails(<?= $payout['id'] ?>)">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        </td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($payouts as $payout): ?>
-                                        <tr>
-                                            <td>
-                                                <strong>#<?= $payout['id'] ?></strong>
-                                            </td>
-                                            <td>
-                                                <strong style="color: var(--success-color);">
-                                                    <?= number_format($payout['amount'], 2) ?> GHS
-                                                </strong>
-                                            </td>
-                                            <td>
-                                                <div style="display: flex; align-items: center; gap: var(--spacing-2);">
-                                                    <i class="fas fa-<?= $payout['method'] == 'bank' ? 'university' : ($payout['method'] == 'mobile' ? 'mobile-alt' : 'credit-card') ?>"></i>
-                                                    <?= ucfirst($payout['method']) ?>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <?= $payout['transaction_ref'] ? htmlspecialchars($payout['transaction_ref']) : '-' ?>
-                                            </td>
-                                            <td>
-                                                <span class="instructor-badge <?= $payout['status'] == 'approved' ? 'success' : ($payout['status'] == 'pending' ? 'warning' : 'danger') ?>">
-                                                    <?= ucfirst($payout['status']) ?>
-                                                </span>
-                                            </td>
-                                            <td><?= date('d/m/Y à H:i', strtotime($payout['created_at'])) ?></td>
-                                            <td>
-                                                <?= $payout['processed_at'] ? date('d/m/Y à H:i', strtotime($payout['processed_at'])) : '-' ?>
-                                            </td>
-                                            <td>
-                                                <?= $payout['notes'] ? htmlspecialchars($payout['notes']) : '-' ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
                 <?php endif; ?>
-            </div>
-
-            <!-- Quick Actions -->
-            <div style="margin-top: var(--spacing-8); display: flex; gap: var(--spacing-4); flex-wrap: wrap;">
-                <a href="earnings.php" class="instructor-btn instructor-btn-secondary">
-                    <i class="fas fa-arrow-left"></i>
-                    Retour aux gains
-                </a>
-                
-                <?php if ($available_balance > 0): ?>
-                    <a href="request_payout.php" class="instructor-btn instructor-btn-success">
-                        <i class="fas fa-plus"></i>
-                        Demander un paiement
-                    </a>
-                <?php endif; ?>
-                
-                <a href="transactions.php" class="instructor-btn instructor-btn-primary">
-                    <i class="fas fa-shopping-cart"></i>
-                    Voir les transactions
-                </a>
             </div>
         </div>
     </div>
 
+    <!-- JavaScript -->
     <script>
-        // Payouts Chart
-        const ctx = document.getElementById('payoutsChart').getContext('2d');
-        const payoutsData = <?= json_encode($monthly_data) ?>;
-        
-        const labels = payoutsData.map(item => {
-            const date = new Date(item.month + '-01');
-            return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
-        });
-        
-        const data = payoutsData.map(item => item.total_amount);
-        
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Paiements mensuels (GHS)',
-                    data: data,
-                    backgroundColor: 'var(--primary-color)',
-                    borderColor: 'var(--primary-color)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
+        const monthlyData = <?= json_encode($monthly_data) ?>;
+
+        function initializeChart() {
+            const ctx = document.getElementById('payoutsChart').getContext('2d');
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: monthlyData.map(item => {
+                        const date = new Date(item.month + '-01');
+                        return date.toLocaleDateString('<?= $_SESSION['user_language'] ?? 'fr' ?>', {
+                            month: 'short',
+                            year: 'numeric'
+                        });
+                    }),
+                    datasets: [{
+                        label: '<?= __('monthly_payouts') ?>',
+                        data: monthlyData.map(item => item.total_amount),
+                        backgroundColor: '#10b981',
+                        borderRadius: 8,
+                        borderWidth: 0
+                    }]
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return value.toLocaleString() + ' GHS';
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    aspectRatio: 2.5,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            padding: 12,
+                            titleColor: 'white',
+                            bodyColor: 'white',
+                            cornerRadius: 8
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value.toLocaleString();
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
                             }
                         }
                     }
                 }
-            }
-        });
-
-        // Auto-submit form when filters change
-        document.addEventListener('DOMContentLoaded', function() {
-            const filterSelects = document.querySelectorAll('select[name="status"], select[name="year"], select[name="sort"]');
-            filterSelects.forEach(select => {
-                select.addEventListener('change', function() {
-                    this.closest('form').submit();
-                });
             });
+        }
+
+        function refreshData() {
+            window.location.reload();
+        }
+
+        function requestPayout() {
+            alert('<?= __('request_payout_feature_coming_soon') ?>');
+        }
+
+        function viewDetails(payoutId) {
+            alert('<?= __('view_details') ?> #' + payoutId);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeChart();
         });
     </script>
 </body>
+
 </html>

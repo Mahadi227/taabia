@@ -1,87 +1,173 @@
 <?php
+// Start output buffering to prevent any accidental output
+ob_start();
+
+// Start session first
+session_start();
+
+require_once '../../includes/i18n.php';
 require_once '../../includes/db.php';
 
 // Initialize cart if not exists
 if (!isset($_SESSION['cart'])) {
-    $_SESSION['cart'] = [];
+    $_SESSION['cart'] = ['products' => [], 'courses' => []];
 }
 
 // Handle cart actions with improved logic
 if (isset($_GET['add'])) {
-    $product_id = (int)$_GET['add'];
+    $item_id = (int)$_GET['add'];
+    $item_type = $_GET['type'] ?? 'product';
     $quantity = (int)($_GET['quantity'] ?? 1);
-    
+
     try {
-        $stmt = $pdo->prepare("SELECT * FROM products WHERE id = ? AND status = 'active'");
-        $stmt->execute([$product_id]);
-        $product = $stmt->fetch();
-        
-        if ($product) {
-            if (isset($_SESSION['cart'][$product_id])) {
-                $_SESSION['cart'][$product_id]['quantity'] += $quantity;
-                $message = "Produit ajouté au panier avec succès !";
+        if ($item_type === 'course') {
+            $stmt = $pdo->prepare("SELECT c.*, u.fullname AS instructor_name FROM courses c LEFT JOIN users u ON c.instructor_id = u.id WHERE c.id = ? AND c.status = 'published'");
+            $stmt->execute([$item_id]);
+            $item = $stmt->fetch();
+
+            if ($item) {
+                if (isset($_SESSION['cart']['courses'][$item_id])) {
+                    $message = __("course_already_in_cart");
+                } else {
+                    $_SESSION['cart']['courses'][$item_id] = [
+                        'id' => $item['id'],
+                        'title' => $item['title'],
+                        'price' => $item['price'],
+                        'image_url' => $item['image_url'],
+                        'instructor_name' => $item['instructor_name'],
+                        'type' => 'course'
+                    ];
+                    $message = __("course_added_to_cart");
+                }
             } else {
-                $_SESSION['cart'][$product_id] = [
-                    'id' => $product['id'],
-                    'name' => $product['name'],
-                    'price' => $product['price'],
-                    'image_url' => $product['image_url'],
-                    'quantity' => $quantity
-                ];
-                $message = "Nouveau produit ajouté au panier !";
+                $error = __("course_not_found");
+            }
+        } else {
+            $stmt = $pdo->prepare("SELECT * FROM products WHERE id = ? AND status = 'active'");
+            $stmt->execute([$item_id]);
+            $item = $stmt->fetch();
+
+            if ($item) {
+                // Check stock availability
+                if ($item['stock_quantity'] <= 0) {
+                    $error = __("product_out_of_stock");
+                } elseif ($item['stock_quantity'] < $quantity) {
+                    $error = __("insufficient_stock") . " {$item['stock_quantity']}";
+                    $quantity = $item['stock_quantity']; // Set to available stock
+                } else {
+                    if (isset($_SESSION['cart']['products'][$item_id])) {
+                        $new_quantity = $_SESSION['cart']['products'][$item_id]['quantity'] + $quantity;
+                        if ($new_quantity <= $item['stock_quantity']) {
+                            $_SESSION['cart']['products'][$item_id]['quantity'] = $new_quantity;
+                            $message = __("product_added_to_cart_success");
+                        } else {
+                            $_SESSION['cart']['products'][$item_id]['quantity'] = $item['stock_quantity'];
+                            $message = __("quantity_adjusted_to_stock");
+                        }
+                    } else {
+                        $_SESSION['cart']['products'][$item_id] = [
+                            'id' => $item['id'],
+                            'name' => $item['name'],
+                            'price' => $item['price'],
+                            'image_url' => $item['image_url'],
+                            'quantity' => $quantity,
+                            'type' => 'product'
+                        ];
+                        $message = __("new_product_added_to_cart");
+                    }
+                }
+            } else {
+                $error = __("product_not_found");
             }
         }
     } catch (PDOException $e) {
-        $error = "Erreur lors de l'ajout du produit";
+        $error = __("error_adding_item");
     }
 }
 
 if (isset($_GET['remove'])) {
-    $product_id = (int)$_GET['remove'];
-    if (isset($_SESSION['cart'][$product_id])) {
-        unset($_SESSION['cart'][$product_id]);
-        $message = "Produit retiré du panier";
+    $item_id = (int)$_GET['remove'];
+    $item_type = $_GET['type'] ?? 'product';
+
+    if ($item_type === 'course' && isset($_SESSION['cart']['courses'][$item_id])) {
+        unset($_SESSION['cart']['courses'][$item_id]);
+        $message = __("course_removed_from_cart");
+    } elseif (isset($_SESSION['cart']['products'][$item_id])) {
+        unset($_SESSION['cart']['products'][$item_id]);
+        $message = __("product_removed_from_cart");
     }
 }
 
 if (isset($_GET['update'])) {
-    $product_id = (int)$_GET['update'];
+    $item_id = (int)$_GET['update'];
     $quantity = (int)$_GET['quantity'];
-    
-    if ($quantity > 0) {
-        $_SESSION['cart'][$product_id]['quantity'] = $quantity;
-        $message = "Quantité mise à jour";
+    $item_type = $_GET['type'] ?? 'product';
+
+    if ($item_type === 'course') {
+        // Courses are always quantity 1
+        if (isset($_SESSION['cart']['courses'][$item_id])) {
+            $message = __("quantity_updated");
+        }
     } else {
-        unset($_SESSION['cart'][$product_id]);
-        $message = "Produit retiré du panier";
+        if ($quantity > 0 && isset($_SESSION['cart']['products'][$item_id])) {
+            // Check stock availability before updating quantity
+            try {
+                $stmt = $pdo->prepare("SELECT stock_quantity FROM products WHERE id = ? AND status = 'active'");
+                $stmt->execute([$item_id]);
+                $available_stock = $stmt->fetchColumn();
+
+                if ($available_stock >= $quantity) {
+                    $_SESSION['cart']['products'][$item_id]['quantity'] = $quantity;
+                    $message = __("quantity_updated");
+                } else {
+                    $error = __("insufficient_stock") . " $available_stock";
+                    // Set quantity to available stock
+                    $_SESSION['cart']['products'][$item_id]['quantity'] = $available_stock;
+                }
+            } catch (PDOException $e) {
+                $error = __("error_checking_stock");
+            }
+        } elseif (isset($_SESSION['cart']['products'][$item_id])) {
+            unset($_SESSION['cart']['products'][$item_id]);
+            $message = __("product_removed_from_cart");
+        }
     }
 }
 
 if (isset($_GET['clear'])) {
-    $_SESSION['cart'] = [];
-    $message = "Panier vidé";
+    $_SESSION['cart'] = ['products' => [], 'courses' => []];
+    $message = __("cart_cleared");
 }
 
 // Calculate totals
 $total_items = 0;
 $total_price = 0;
+$courses_total = 0;
+$products_total = 0;
 
-foreach ($_SESSION['cart'] as $item) {
-    $total_items += $item['quantity'];
-    $total_price += $item['price'] * $item['quantity'];
+foreach ($_SESSION['cart']['courses'] as $item) {
+    $total_items++;
+    $courses_total += $item['price'];
 }
 
-$tax = $total_price * 0.15;
-$shipping = 0; // Free shipping
+foreach ($_SESSION['cart']['products'] as $item) {
+    $total_items += $item['quantity'];
+    $products_total += $item['price'] * $item['quantity'];
+}
+
+$total_price = $courses_total + $products_total;
+$tax = $products_total * 0.15; // Tax only on products
+$shipping = $products_total > 0 ? 0 : 0; // Free shipping
 $total_with_tax = $total_price + $tax + $shipping;
 ?>
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panier | TaaBia</title>
+    <title><?= __('cart') ?> | TaaBia</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="main-styles.css">
@@ -106,51 +192,6 @@ $total_with_tax = $total_price + $tax + $shipping;
         .cart-header p {
             color: var(--text-secondary);
             font-size: 1.1rem;
-        }
-
-        .cart-stats {
-            display: flex;
-            justify-content: center;
-            gap: var(--spacing-xl);
-            margin-bottom: var(--spacing-xl);
-        }
-
-        .stat-item {
-            text-align: center;
-            padding: var(--spacing-md);
-            background: var(--bg-primary);
-            border-radius: var(--border-radius-sm);
-            box-shadow: var(--shadow-light);
-        }
-
-        .stat-number {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--primary-color);
-        }
-
-        .stat-label {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
-
-        .message {
-            padding: var(--spacing-md);
-            border-radius: var(--border-radius-sm);
-            margin-bottom: var(--spacing-lg);
-            text-align: center;
-        }
-
-        .message.success {
-            background: rgba(76, 175, 80, 0.1);
-            color: var(--success-color);
-            border: 1px solid var(--success-color);
-        }
-
-        .message.error {
-            background: rgba(244, 67, 54, 0.1);
-            color: var(--danger-color);
-            border: 1px solid var(--danger-color);
         }
 
         .cart-stats {
@@ -271,6 +312,12 @@ $total_with_tax = $total_price + $tax + $shipping;
             color: var(--primary-color);
             font-weight: 600;
             font-size: 1.2rem;
+        }
+
+        .cart-item-instructor {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: var(--spacing-sm);
         }
 
         .cart-item-quantity {
@@ -425,45 +472,48 @@ $total_with_tax = $total_price + $tax + $shipping;
         }
     </style>
 </head>
+
 <body>
-     <!-- Header -->
-     <header class="header">
+    <!-- Header -->
+    <header class="header">
         <nav class="navbar">
             <a href="index.php" class="logo">
                 <i class="fas fa-graduation-cap"></i> TaaBia
             </a>
-            
+
             <button class="hamburger" id="hamburger">
                 <span></span>
                 <span></span>
                 <span></span>
             </button>
             <ul class="nav-menu" id="nav-menu">
-                <li><a href="index.php" class="nav-link">Accueil</a></li>
-                <li><a href="courses.php" class="nav-link">Formations</a></li>
-                <li><a href="shop.php" class="nav-link">Boutique</a></li>
-                <li><a href="upcoming_events.php" class="nav-link">Événements</a></li>
-                <li><a href="blog.php" class="nav-link">Blog</a></li>
-                <li><a href="about.php" class="nav-link">À propos</a></li>
-                <li><a href="contact.php" class="nav-link">Contact</a></li>
+                <li><a href="index.php" class="nav-link"><?= __('welcome') ?></a></li>
+                <li><a href="courses.php" class="nav-link"><?= __('courses') ?></a></li>
+                <li><a href="shop.php" class="nav-link"><?= __('shop') ?></a></li>
+                <li><a href="upcoming_events.php" class="nav-link"><?= __('events') ?></a></li>
+                <li><a href="blog.php" class="nav-link"><?= __('blog') ?></a></li>
+                <li><a href="about.php" class="nav-link"><?= __('about') ?></a></li>
+                <li><a href="contact.php" class="nav-link"><?= __('contact') ?></a></li>
                 <li><a href="basket.php" class="nav-link"><i class="fas fa-shopping-cart"></i></a></li>
-
+                <li style="margin-left: auto;">
+                    <?php include '../../includes/public_language_switcher.php'; ?>
+                </li>
             </ul>
-            
+
             <div class="nav-actions">
                 <?php if (isset($_SESSION['user_id'])): ?>
                     <a href="../student/index.php" class="btn btn-secondary">
-                        <i class="fas fa-user"></i> Mon Compte
+                        <i class="fas fa-user"></i> <?= __('my_profile') ?>
                     </a>
-                    <a href="../auth/logout.php" class="btn btn-primary">
-                        <i class="fas fa-sign-out-alt"></i> Déconnexion
+                    <a href="../../auth/logout.php" class="btn btn-primary">
+                        <i class="fas fa-sign-out-alt"></i> <?= __('logout') ?>
                     </a>
                 <?php else: ?>
-                    <a href="../auth/login.php" class="btn btn-secondary">
-                        <i class="fas fa-sign-in-alt"></i> Connexion
+                    <a href="../../auth/login.php" class="btn btn-secondary">
+                        <i class="fas fa-sign-in-alt"></i> <?= __('login') ?>
                     </a>
-                    <a href="../auth/register.php" class="btn btn-primary">
-                        <i class="fas fa-user-plus"></i> Inscription
+                    <a href="../../auth/register.php" class="btn btn-primary">
+                        <i class="fas fa-user-plus"></i> <?= __('register') ?>
                     </a>
                 <?php endif; ?>
             </div>
@@ -474,8 +524,8 @@ $total_with_tax = $total_price + $tax + $shipping;
     <main class="main">
         <div class="cart-container">
             <div class="cart-header">
-                <h1><i class="fas fa-shopping-cart"></i> Mon Panier</h1>
-                <p>Gérez vos articles et finalisez votre commande</p>
+                <h1><i class="fas fa-shopping-cart"></i> <?= __('cart') ?></h1>
+                <p><?= __('cart_description') ?></p>
             </div>
 
             <?php if (isset($message)): ?>
@@ -490,64 +540,70 @@ $total_with_tax = $total_price + $tax + $shipping;
                 </div>
             <?php endif; ?>
 
-            <?php if (isset($message)): ?>
-                <div class="message success">
-                    <i class="fas fa-check-circle"></i> <?= htmlspecialchars($message) ?>
-                </div>
-            <?php endif; ?>
-
-            <?php if (isset($error)): ?>
-                <div class="message error">
-                    <i class="fas fa-exclamation-triangle"></i> <?= htmlspecialchars($error) ?>
-                </div>
-            <?php endif; ?>
-
-            <?php if (empty($_SESSION['cart'])): ?>
+            <?php if (empty($_SESSION['cart']['products']) && empty($_SESSION['cart']['courses'])): ?>
                 <div class="cart-empty">
                     <i class="fas fa-shopping-cart"></i>
-                    <h2>Votre panier est vide</h2>
-                    <p>Découvrez nos produits et ajoutez-les à votre panier</p>
+                    <h2><?= __('cart_empty') ?></h2>
+                    <p><?= __('cart_empty_description') ?></p>
                     <a href="shop.php" class="btn btn-primary">
-                        <i class="fas fa-shopping-bag"></i> Continuer les achats
+                        <i class="fas fa-shopping-bag"></i> <?= __('continue_shopping') ?>
                     </a>
                 </div>
             <?php else: ?>
                 <div class="cart-stats">
                     <div class="stat-item">
                         <div class="stat-number"><?= $total_items ?></div>
-                        <div class="stat-label">Articles</div>
+                        <div class="stat-label"><?= __('items') ?></div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-number"><?= count($_SESSION['cart']) ?></div>
-                        <div class="stat-label">Produits</div>
+                        <div class="stat-number"><?= count($_SESSION['cart']['products']) + count($_SESSION['cart']['courses']) ?></div>
+                        <div class="stat-label"><?= __('products') ?></div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-number"><?= number_format($total_price, 0, ',', ' ') ?></div>
-                        <div class="stat-label">FCFA</div>
+                        <div class="stat-label">GHS</div>
                     </div>
                 </div>
 
                 <div class="cart-content">
                     <div class="cart-items">
-                        <?php foreach ($_SESSION['cart'] as $product_id => $item): ?>
+                        <?php foreach ($_SESSION['cart']['products'] as $product_id => $item): ?>
                             <div class="cart-item">
-                                <img src="<?= htmlspecialchars($item['image_url']) ?>" alt="<?= htmlspecialchars($item['name']) ?>" class="cart-item-image">
+                                <img src="<?= !empty($item['image_url']) ? '../../uploads/' . htmlspecialchars($item['image_url']) : '../../assets/img/default-product.jpg' ?>" alt="<?= htmlspecialchars($item['name']) ?>" class="cart-item-image">
                                 <div class="cart-item-details">
                                     <h3><?= htmlspecialchars($item['name']) ?></h3>
-                                    <p class="cart-item-price"><?= number_format($item['price'], 0, ',', ' ') ?> FCFA</p>
+                                    <p class="cart-item-price"><?= number_format($item['price'], 0, ',', ' ') ?> GHS</p>
                                 </div>
                                 <div class="cart-item-quantity">
-                                    <button class="quantity-btn" onclick="updateQuantity(<?= $product_id ?>, -1)" title="Diminuer">
+                                    <button class="quantity-btn" onclick="updateQuantity(<?= $product_id ?>, -1)" title="<?= __('decrease') ?>">
                                         <i class="fas fa-minus"></i>
                                     </button>
-                                    <input type="number" value="<?= $item['quantity'] ?>" min="1" class="quantity-input" onchange="updateQuantity(<?= $product_id ?>, this.value, true)" title="Quantité">
-                                    <button class="quantity-btn" onclick="updateQuantity(<?= $product_id ?>, 1)" title="Augmenter">
+                                    <input type="number" value="<?= $item['quantity'] ?>" min="1" class="quantity-input" onchange="updateQuantity(<?= $product_id ?>, this.value, true, 'product')" title="<?= __('quantity') ?>">
+                                    <button class="quantity-btn" onclick="updateQuantity(<?= $product_id ?>, 1)" title="<?= __('increase') ?>">
                                         <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
                                 <div class="cart-item-actions">
-                                    <button class="remove-btn" onclick="removeItem(<?= $product_id ?>)" title="Supprimer">
-                                        <i class="fas fa-trash"></i> Supprimer
+                                    <button class="remove-btn" onclick="removeItem(<?= $product_id ?>)" title="<?= __('remove') ?>">
+                                        <i class="fas fa-trash"></i> <?= __('remove') ?>
+                                    </button>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                        <?php foreach ($_SESSION['cart']['courses'] as $course_id => $item): ?>
+                            <div class="cart-item">
+                                <img src="<?= !empty($item['image_url']) ? '../../uploads/' . htmlspecialchars($item['image_url']) : '../../assets/img/default-course.jpg' ?>" alt="<?= htmlspecialchars($item['title']) ?>" class="cart-item-image">
+                                <div class="cart-item-details">
+                                    <h3><?= htmlspecialchars($item['title']) ?></h3>
+                                    <p class="cart-item-instructor"><?= __('instructor') ?>: <?= htmlspecialchars($item['instructor_name'] ?? 'Unknown') ?></p>
+                                    <p class="cart-item-price"><?= number_format($item['price'], 0, ',', ' ') ?> GHS</p>
+                                </div>
+                                <div class="cart-item-quantity">
+                                    <span class="quantity-display">1</span>
+                                </div>
+                                <div class="cart-item-actions">
+                                    <button class="remove-btn" onclick="removeItem(<?= $course_id ?>, 'course')" title="<?= __('remove') ?>">
+                                        <i class="fas fa-trash"></i> <?= __('remove') ?>
                                     </button>
                                 </div>
                             </div>
@@ -555,52 +611,52 @@ $total_with_tax = $total_price + $tax + $shipping;
                     </div>
 
                     <div class="cart-summary">
-                        <h3 class="summary-title">Résumé de la commande</h3>
+                        <h3 class="summary-title"><?= __('order_summary') ?></h3>
                         <div class="summary-row">
-                            <span>Sous-total (<?= $total_items ?> articles)</span>
-                            <span><?= number_format($total_price, 0, ',', ' ') ?> FCFA</span>
+                            <span><?= __('subtotal') ?> (<?= $total_items ?> <?= __('items') ?>)</span>
+                            <span><?= number_format($total_price, 0, ',', ' ') ?> GHS</span>
                         </div>
                         <div class="summary-row">
-                            <span>Livraison</span>
-                            <span>Gratuit</span>
+                            <span><?= __('shipping') ?></span>
+                            <span><?= __('free') ?></span>
                         </div>
                         <div class="summary-row">
-                            <span>Taxes (15%)</span>
-                            <span><?= number_format($tax, 0, ',', ' ') ?> FCFA</span>
+                            <span><?= __('tax') ?> (15%)</span>
+                            <span><?= number_format($tax, 0, ',', ' ') ?> GHS</span>
                         </div>
                         <div class="summary-row total">
-                            <span>Total</span>
-                            <span><?= number_format($total_with_tax, 0, ',', ' ') ?> FCFA</span>
+                            <span><?= __('total') ?></span>
+                            <span><?= number_format($total_with_tax, 0, ',', ' ') ?> GHS</span>
                         </div>
-                        
+
                         <div class="cart-actions">
                             <a href="shop.php" class="btn btn-continue">
-                                <i class="fas fa-arrow-left"></i> Continuer les achats
+                                <i class="fas fa-arrow-left"></i> <?= __('continue_shopping') ?>
                             </a>
                             <a href="checkout.php" class="btn btn-checkout">
-                                <i class="fas fa-credit-card"></i> Finaliser la commande
+                                <i class="fas fa-credit-card"></i> <?= __('checkout') ?>
                             </a>
                             <button onclick="clearCart()" class="btn btn-clear">
-                                <i class="fas fa-trash"></i> Vider le panier
+                                <i class="fas fa-trash"></i> <?= __('clear_cart') ?>
                             </button>
                         </div>
 
                         <div class="cart-features">
                             <div class="feature-item">
                                 <i class="fas fa-shield-alt"></i>
-                                <span>Paiement sécurisé</span>
+                                <span><?= __('secure_payment') ?></span>
                             </div>
                             <div class="feature-item">
                                 <i class="fas fa-truck"></i>
-                                <span>Livraison gratuite</span>
+                                <span><?= __('free_shipping') ?></span>
                             </div>
                             <div class="feature-item">
                                 <i class="fas fa-undo"></i>
-                                <span>Retours acceptés</span>
+                                <span><?= __('returns_accepted') ?></span>
                             </div>
                             <div class="feature-item">
                                 <i class="fas fa-headset"></i>
-                                <span>Support 24/7</span>
+                                <span><?= __('support_24_7') ?></span>
                             </div>
                         </div>
                     </div>
@@ -615,63 +671,80 @@ $total_with_tax = $total_price + $tax + $shipping;
             <div class="footer-content">
                 <div class="footer-section">
                     <h3><i class="fas fa-graduation-cap"></i> TaaBia</h3>
-                    <p>Votre plateforme d'apprentissage et d'innovation en Afrique</p>
-                    <p>Démocratiser l'accès à l'éducation et aux produits innovants</p>
+                    <p><?= __('footer_description') ?></p>
+                    <p><?= __('footer_mission') ?></p>
                 </div>
-                
+
                 <div class="footer-section">
-                    <h3>Services</h3>
-                    <a href="courses.php">Formations</a>
-                    <a href="shop.php">Boutique</a>
-                    <a href="upcoming_events.php">Événements</a>
-                    <a href="contact.php">Support</a>
+                    <h3><?= __('footer_services') ?></h3>
+                    <a href="courses.php"><?= __('courses') ?></a>
+                    <a href="shop.php"><?= __('shop') ?></a>
+                    <a href="upcoming_events.php"><?= __('events') ?></a>
+                    <a href="contact.php"><?= __('contact') ?></a>
                 </div>
-                
+
                 <div class="footer-section">
-                    <h3>Contact</h3>
+                    <h3><?= __('footer_contact') ?></h3>
                     <p><i class="fas fa-envelope"></i> contact@taabia.com</p>
                     <p><i class="fas fa-phone"></i> +233 XX XXX XXXX</p>
                     <p><i class="fas fa-map-marker-alt"></i> Accra, Ghana</p>
                 </div>
-                
+
                 <div class="footer-section">
-                    <h3>Suivez-nous</h3>
+                    <h3><?= __('footer_follow_us') ?></h3>
                     <a href="#"><i class="fab fa-facebook"></i> Facebook</a>
                     <a href="#"><i class="fab fa-twitter"></i> Twitter</a>
                     <a href="#"><i class="fab fa-linkedin"></i> LinkedIn</a>
                     <a href="#"><i class="fab fa-instagram"></i> Instagram</a>
                 </div>
             </div>
-            
+
             <div class="footer-bottom">
-                <p>&copy; <?= date('Y') ?> TaaBia. Tous droits réservés.</p>
+                <p>&copy; <?= date('Y') ?> TaaBia. <?= __('footer_rights_reserved') ?>.</p>
             </div>
         </div>
     </footer>
 
     <script>
-        function updateQuantity(productId, change, isDirect = false) {
+        // Create translations object for JavaScript
+        const translations = {
+            confirmRemove: '<?= __("confirm_remove_item") ?>',
+            confirmClearCart: '<?= __("confirm_clear_cart") ?>'
+        };
+
+        function updateQuantity(itemId, change, isDirectInput = false, itemType = 'product') {
             let quantity;
-            if (isDirect) {
-                quantity = parseInt(change);
+            if (itemType === 'course') {
+                quantity = 1; // Courses are always 1 quantity
             } else {
-                const currentQuantity = parseInt(document.querySelector(`input[onchange*="${productId}"]`).value);
-                quantity = currentQuantity + parseInt(change);
+                if (isDirectInput) {
+                    quantity = parseInt(change);
+                } else {
+                    const input = document.querySelector(`input[onchange*="${itemId}"]`);
+                    if (input) {
+                        const currentQuantity = parseInt(input.value);
+                        quantity = currentQuantity + parseInt(change);
+                    } else {
+                        quantity = 1;
+                    }
+                }
             }
-            
+
             if (quantity > 0) {
-                window.location.href = `basket.php?update=${productId}&quantity=${quantity}`;
+                window.location.href = `basket.php?update=${itemId}&quantity=${quantity}&type=${itemType}`;
+            } else if (quantity === 0) {
+                removeItem(itemId, itemType);
             }
         }
 
-        function removeItem(productId) {
-            if (confirm('Êtes-vous sûr de vouloir supprimer cet article ?')) {
-                window.location.href = `basket.php?remove=${productId}`;
+        function removeItem(itemId, itemType = 'product') {
+            if (confirm(translations.confirmRemove)) {
+                window.location.href = `basket.php?remove=${itemId}&type=${itemType}`;
             }
         }
 
         function clearCart() {
-            if (confirm('Êtes-vous sûr de vouloir vider complètement votre panier ?')) {
+            if (confirm(translations.confirmClearCart)) {
                 window.location.href = `basket.php?clear=1`;
             }
         }
@@ -688,4 +761,5 @@ $total_with_tax = $total_price + $tax + $shipping;
         }, 5000);
     </script>
 </body>
+
 </html>

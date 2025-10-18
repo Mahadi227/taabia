@@ -1,4 +1,10 @@
 <?php
+// Start output buffering to prevent any accidental output
+ob_start();
+
+// Start session first
+session_start();
+
 require_once '../../includes/i18n.php';
 require_once '../../includes/db.php';
 
@@ -6,17 +12,66 @@ require_once '../../includes/db.php';
 try {
     $stats = [
         'courses' => $pdo->query("SELECT COUNT(*) FROM courses WHERE status = 'published'")->fetchColumn(),
-        'students' => $pdo->query("SELECT COUNT(*) FROM student_courses")->fetchColumn(),
-        'instructors' => $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'instructor' AND status = 'active'")->fetchColumn(),
-        'events' => $pdo->query("SELECT COUNT(*) FROM events WHERE status = 'active'")->fetchColumn()
+        'students' => $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'student' AND is_active = 1")->fetchColumn(),
+        'instructors' => $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'instructor' AND is_active = 1")->fetchColumn(),
+        'events' => $pdo->query("SELECT COUNT(*) FROM events WHERE status = 'upcoming'")->fetchColumn(),
+        'products' => $pdo->query("SELECT COUNT(*) FROM products WHERE status = 'active'")->fetchColumn(),
+        'enrollments' => $pdo->query("SELECT COUNT(*) FROM student_courses")->fetchColumn()
     ];
+
+    // Get featured instructors
+    $featured_instructors = $pdo->query("
+        SELECT u.fullname, u.email, u.profile_image, 
+               COUNT(c.id) as course_count,
+               AVG(c.rating) as avg_rating
+        FROM users u 
+        LEFT JOIN courses c ON u.id = c.instructor_id AND c.status = 'published'
+        WHERE u.role = 'instructor' AND u.is_active = 1
+        GROUP BY u.id
+        ORDER BY course_count DESC, avg_rating DESC
+        LIMIT 6
+    ")->fetchAll();
+
+    // Get recent achievements
+    $recent_achievements = $pdo->query("
+        SELECT 'course_published' as type, c.title, u.fullname as instructor, c.created_at
+        FROM courses c 
+        JOIN users u ON c.instructor_id = u.id 
+        WHERE c.status = 'published' 
+        ORDER BY c.created_at DESC 
+        LIMIT 5
+    ")->fetchAll();
 } catch (PDOException $e) {
-    $stats = ['courses' => 0, 'students' => 0, 'instructors' => 0, 'events' => 0];
+    $stats = ['courses' => 0, 'students' => 0, 'instructors' => 0, 'events' => 0, 'products' => 0, 'enrollments' => 0];
+    $featured_instructors = [];
+    $recent_achievements = [];
+}
+
+
+// Get platform statistics
+try {
+    // Total courses
+    $total_courses = $pdo->query("SELECT COUNT(*) FROM courses WHERE status = 'published'")->fetchColumn();
+
+    // Total students
+    $total_students = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'student' AND is_active = 1")->fetchColumn();
+
+    // Total instructors
+    $total_instructors = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'instructor' AND is_active = 1")->fetchColumn();
+
+    // Total products
+    $total_products = $pdo->query("SELECT COUNT(*) FROM products WHERE status = 'active'")->fetchColumn();
+} catch (PDOException $e) {
+    $total_courses = 0;
+    $total_students = 0;
+    $total_instructors = 0;
+    $total_products = 0;
 }
 ?>
 
 <!DOCTYPE html>
-<html lang="<?= $lang ?>">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -40,8 +95,8 @@ try {
             --border-color: #e0e0e0;
             --border-radius: 12px;
             --border-radius-sm: 6px;
-            --shadow-light: 0 2px 4px rgba(0,0,0,0.1);
-            --shadow-medium: 0 4px 8px rgba(0,0,0,0.12);
+            --shadow-light: 0 2px 4px rgba(0, 0, 0, 0.1);
+            --shadow-medium: 0 4px 8px rgba(0, 0, 0, 0.12);
             --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             --spacing-xs: 0.25rem;
@@ -373,7 +428,7 @@ try {
 
         .testimonials-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: var(--spacing-lg);
             margin-top: var(--spacing-xl);
         }
@@ -429,7 +484,8 @@ try {
             color: var(--primary-light);
         }
 
-        .footer-section p, .footer-section a {
+        .footer-section p,
+        .footer-section a {
             color: var(--text-secondary);
             text-decoration: none;
             margin-bottom: var(--spacing-sm);
@@ -454,32 +510,107 @@ try {
                 gap: var(--spacing-md);
                 padding: var(--spacing-md);
             }
-            
+
             .nav-menu {
                 flex-direction: column;
                 gap: var(--spacing-md);
             }
-            
+
             .nav-actions {
                 flex-direction: column;
                 width: 100%;
             }
-            
-            .features, .stats, .team-grid, .testimonials-grid {
+
+            .features,
+            .stats,
+            .team-grid,
+            .testimonials-grid {
                 grid-template-columns: 1fr;
             }
-            
+
             .founder-content {
                 grid-template-columns: 1fr;
                 text-align: center;
             }
-            
+
             .banner h1 {
                 font-size: 2rem;
             }
         }
+
+        .stats {
+            background: #ffffff;
+            text-align: center;
+            padding: 3rem 2rem;
+        }
+
+        .stats h2 {
+            font-size: 2rem;
+            margin-bottom: 2rem;
+            color: #004d40;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 2rem;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .stat {
+            background: #f1f1f1;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease;
+        }
+
+        .stat:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat h3 {
+            font-size: 2.2rem;
+            color: #009688;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat p {
+            font-size: 1rem;
+            margin: 0;
+            color: #444;
+        }
+
+        .testimonials-list {
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
+        }
+
+        .testimonial {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+            padding: 24px;
+            text-align: center;
+            max-width: 300px;
+            flex: 1;
+        }
+
+        .testimonial blockquote {
+            font-style: italic;
+            color: #555;
+            margin-bottom: 12px;
+        }
+
+        .testimonial-author {
+            font-weight: 600;
+            color: #333;
+        }
     </style>
 </head>
+
 <body>
     <!-- Header -->
     <header class="header">
@@ -487,52 +618,51 @@ try {
             <a href="index.php" class="logo">
                 <i class="fas fa-graduation-cap"></i> TaaBia
             </a>
-            
+
             <button class="hamburger" id="hamburger">
                 <span></span>
                 <span></span>
                 <span></span>
             </button>
             <ul class="nav-menu" id="nav-menu">
-                                 <li><a href="index.php" class="nav-link"><?= __('welcome') ?></a></li>
-                 <li><a href="courses.php" class="nav-link"><?= __('courses') ?></a></li>
-                 <li><a href="shop.php" class="nav-link"><?= __('shop') ?></a></li>
-                 <li><a href="upcoming_events.php" class="nav-link"><?= __('events') ?></a></li>
-                 <li><a href="blog.php" class="nav-link"><?= __('blog') ?></a></li>
-                 <li><a href="about.php" class="nav-link"><?= __('about') ?></a></li>
-                                  <li><a href="contact.php" class="nav-link"><?= __('contact') ?></a></li>
-                 <li><a href="basket.php" class="nav-link"><i class="fas fa-shopping-cart"></i></a></li>
-                 
-                 <li style="margin-left: auto;">
-                     <?php include '../../includes/public_language_switcher.php'; ?>
-                 </li>
-
+                <li><a href="index.php" class="nav-link"><?= __('welcome') ?></a></li>
+                <li><a href="courses.php" class="nav-link"><?= __('courses') ?></a></li>
+                <li><a href="shop.php" class="nav-link"><?= __('shop') ?></a></li>
+                <li><a href="upcoming_events.php" class="nav-link"><?= __('events') ?></a></li>
+                <li><a href="blog.php" class="nav-link"><?= __('blog') ?></a></li>
+                <li><a href="about.php" class="nav-link"><?= __('about') ?></a></li>
+                <li><a href="contact.php" class="nav-link"><?= __('contact') ?></a></li>
+                <li><a href="basket.php" class="nav-link"><i class="fas fa-shopping-cart"></i></a></li>
+                <li style="margin-left: auto;">
+                    <?php include '../../includes/public_language_switcher.php'; ?>
+                </li>
             </ul>
-            
+
             <div class="nav-actions">
                 <?php if (isset($_SESSION['user_id'])): ?>
-                                         <a href="../student/index.php" class="btn btn-secondary">
-                         <i class="fas fa-user"></i> <?= __('my_profile') ?>
-                     </a>
-                     <a href="../auth/logout.php" class="btn btn-primary">
-                         <i class="fas fa-sign-out-alt"></i> <?= __('logout') ?>
-                     </a>
-                 <?php else: ?>
-                     <a href="../auth/login.php" class="btn btn-secondary">
-                         <i class="fas fa-sign-in-alt"></i> <?= __('login') ?>
-                     </a>
-                     <a href="../auth/register.php" class="btn btn-primary">
-                         <i class="fas fa-user-plus"></i> <?= __('register') ?>
-                     </a>
+                    <a href="../student/index.php" class="btn btn-secondary">
+                        <i class="fas fa-user"></i> <?= __('my_profile') ?>
+                    </a>
+                    <a href="../../auth/logout.php" class="btn btn-primary">
+                        <i class="fas fa-sign-out-alt"></i> <?= __('logout') ?>
+                    </a>
+                <?php else: ?>
+                    <a href="../../auth/login.php" class="btn btn-secondary">
+                        <i class="fas fa-sign-in-alt"></i> <?= __('login') ?>
+                    </a>
+                    <a href="../../auth/register.php" class="btn btn-primary">
+                        <i class="fas fa-user-plus"></i> <?= __('register') ?>
+                    </a>
                 <?php endif; ?>
             </div>
         </nav>
     </header>
+
     <!-- Banner -->
     <section class="banner">
         <div class="container">
-                         <h1><?= __('about') ?> <?= __('about_taabia') ?></h1>
-             <p><?= __('about_description') ?></p>
+            <h1><?= __('about') ?> <?= __('about_taabia') ?></h1>
+            <p><?= __('about_description') ?></p>
         </div>
     </section>
 
@@ -540,362 +670,492 @@ try {
     <section class="section">
         <div class="container">
             <div class="content">
-                                 <h2><i class="fas fa-bullseye"></i> <?= __('our_mission') ?></h2>
-                 <p>
-                     <?= __('mission_description') ?>
-                 </p>
-                 
-                 <h2><i class="fas fa-eye"></i> <?= __('our_vision') ?></h2>
-                 <p>
-                     <?= __('vision_description') ?>
-                 </p>
-                 
-                 <h2><i class="fas fa-heart"></i> <?= __('our_values') ?></h2>
-                 <p>
-                     <strong><?= __('excellence') ?>:</strong> <?= __('excellence_description') ?><br>
-                     <strong><?= __('innovation') ?>:</strong> <?= __('innovation_description') ?><br>
-                     <strong><?= __('community') ?>:</strong> <?= __('community_description') ?><br>
-                     <strong><?= __('accessibility') ?>:</strong> <?= __('accessibility_description') ?>
-                 </p>
+                <h2><i class="fas fa-bullseye"></i> <?= __('our_mission') ?></h2>
+                <p>
+                    <?= __('mission_description') ?>
+                </p>
+
+                <h2><i class="fas fa-eye"></i> <?= __('our_vision') ?></h2>
+                <p>
+                    <?= __('vision_description') ?>
+                </p>
+
+                <h2><i class="fas fa-heart"></i> <?= __('our_values') ?></h2>
+                <p>
+                    <strong><?= __('excellence') ?>:</strong> <?= __('excellence_description') ?><br>
+                    <strong><?= __('innovation') ?>:</strong> <?= __('innovation_description') ?><br>
+                    <strong><?= __('community') ?>:</strong> <?= __('community_description') ?><br>
+                    <strong><?= __('accessibility') ?>:</strong> <?= __('accessibility_description') ?>
+                </p>
             </div>
-            
+
             <div class="features">
                 <div class="feature">
                     <i class="fas fa-graduation-cap"></i>
-                    <h3>Features quality </h3>
-                    <p>Features quality</p>
+                    <h3><?= __('features_quality') ?></h3>
+                    <p><?= __('features_quality_description') ?></p>
                 </div>
-                
+
                 <div class="feature">
                     <i class="fas fa-shopping-bag"></i>
-                    <h3>Features innovative products</h3>
-                    <p>Features_innovativeproducts</p>
+                    <h3><?= __('features_innovative_products') ?></h3>
+                    <p><?= __('features_innovative_products_description') ?></p>
                 </div>
-                
+
                 <div class="feature">
                     <i class="fas fa-calendar-alt"></i>
-                    <h3>Features enriching events</h3>
-                    <p>Features enriching events</p>
+                    <h3><?= __('features_enriching_events') ?></h3>
+                    <p><?= __('features_enriching_events_description') ?></p>
                 </div>
-                
+
                 <div class="feature">
                     <i class="fas fa-users"></i>
-                    <h3>Features active community </h3>
-                    <p>Features active community</p>
+                    <h3><?= __('features_active_community') ?></h3>
+                    <p><?= __('features_active_community_description') ?></p>
                 </div>
             </div>
-            
-            <div class="stats">
-                <div class="stat">
-                    <div class="stat-number"><?= $stats['courses'] ?>+</div>
-                    <div class="stat-label"><?= $stats_courses_label ?></div>
-                </div>
-                
-                <div class="stat">
-                    <div class="stat-number"><?= $stats['students'] ?>+</div>
-                    <div class="stat-label"><?= $stats_students_label ?></div>
-                </div>
-                
-                <div class="stat">
-                    <div class="stat-number"><?= $stats['instructors'] ?>+</div>
-                    <div class="stat-label"><?= $stats_instructors_label ?></div>
-                </div>
-                
-                <div class="stat">
-                    <div class="stat-number"><?= $stats['events'] ?>+</div>
-                    <div class="stat-label"><?= $stats_events_label ?></div>
-                </div>
-            </div>
-        </div>
-    </section>
 
-
-    
-
-  <?php
-  // Récupération des chiffres clés
-  require_once '../../includes/db.php';
-
-  $total_students   = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'student' AND is_active = 1")->fetchColumn();
-  $total_teachers   = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'instructor' AND is_active = 1")->fetchColumn();
-  $total_courses    = $pdo->query("SELECT COUNT(*) FROM courses WHERE status = 'published' AND is_active = 1")->fetchColumn();
-  $total_products   = $pdo->query("SELECT COUNT(*) FROM products WHERE status = 'active' AND is_active = 1")->fetchColumn();
-  ?>
-  <section class="section stats">
-    <h2>🚀 Nos chiffres clés</h2>
-    <div class="stats-grid">
-      <div class="stat">
-        <h3><?= number_format($total_students) ?></h3>
-        <p>Étudiants inscrits</p>
-      </div>
-      <div class="stat">
-        <h3><?= number_format($total_teachers) ?></h3>
-        <p>Formateurs actifs</p>
-      </div>
-      <div class="stat">
-        <h3><?= number_format($total_courses) ?></h3>
-        <p>Cours en ligne</p>
-      </div>
-      <div class="stat">
-        <h3><?= number_format($total_products) ?></h3>
-        <p>Produits vendus</p>
-      </div>
-    </div>
-  </section>
-
-  <style>
-    .stats {
-      background: #ffffff;
-      text-align: center;
-      padding: 3rem 2rem;
-    }
-
-    .stats h2 {
-      font-size: 2rem;
-      margin-bottom: 2rem;
-      color: #004d40;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 2rem;
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    .stat {
-      background: #f1f1f1;
-      padding: 2rem;
-      border-radius: 10px;
-      box-shadow: 0 0 8px rgba(0, 0, 0, 0.05);
-      transition: transform 0.3s ease;
-    }
-
-    .stat:hover {
-      transform: translateY(-5px);
-    }
-
-    .stat h3 {
-      font-size: 2.2rem;
-      color: #009688;
-      margin-bottom: 0.5rem;
-    }
-
-    .stat p {
-      font-size: 1rem;
-      margin: 0;
-      color: #444;
-    }
-  </style>
-
-
-    <!-- Team Section -->
-    <section class="section">
-        <div class="container">
-            <div class="team-section">
-                <div class="section-title">
-                    <h1><i class="fas fa-users"></i> Our Team</h1>
-                    <p> Team description </p>
-                </div>
-                
-                <div class="team-grid">
-                    <div class="team-member">
-                        <div class="team-avatar">
-                            <i class="fas fa-user"></i>
+            <!-- Statistics Section -->
+            <section class="section" style="background: var(--bg-primary); padding: var(--spacing-xl) 0;">
+                <div class="container">
+                    <div class="grid"
+                        style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-xl);">
+                        <div style="text-align: center;">
+                            <div
+                                style="font-size: 2.5rem; color: var(--primary-color); margin-bottom: var(--spacing-sm);">
+                                <i class="fas fa-graduation-cap"></i>
+                            </div>
+                            <h3 style="font-size: 2rem; color: var(--text-primary); margin-bottom: var(--spacing-sm);">
+                                <?= number_format($total_courses) ?></h3>
+                            <p style="color: var(--text-secondary);"><?= __('available_courses') ?></p>
                         </div>
-                        <div class="team-name">Sarah Johnson</div>
-                        <div class="team-role">Directrice Générale</div>
-                        <div class="team-bio">Experte en éducation avec 10+ ans d'expérience dans l'innovation pédagogique</div>
-                    </div>
-                    
-                    <div class="team-member">
-                        <div class="team-avatar">
-                            <i class="fas fa-user"></i>
-                        </div>
-                        <div class="team-name">Kwame Mensah</div>
-                        <div class="team-role">Directeur Technique</div>
-                        <div class="team-bio">Spécialiste en développement web et solutions technologiques innovantes</div>
-                    </div>
-                    
-                    <div class="team-member">
-                        <div class="team-avatar">
-                            <i class="fas fa-user"></i>
-                        </div>
-                        <div class="team-name">Aisha Diallo</div>
-                        <div class="team-role">Responsable Pédagogique</div>
-                        <div class="team-bio">Experte en conception de programmes éducatifs et formation des instructeurs</div>
-                    </div>
-                    
-                    <div class="team-member">
-                        <div class="team-avatar">
-                            <i class="fas fa-user"></i>
-                        </div>
-                        <div class="team-name">David Osei</div>
-                        <div class="team-role">Responsable Marketing</div>
-                        <div class="team-bio">Spécialiste en stratégies marketing digital et développement de la communauté</div>
-                    </div>
 
-                    
-                    <div class="team-member">
-                        <div class="team-avatar">
-                            <i class="fas fa-user"></i>
+                        <div style="text-align: center;">
+                            <div
+                                style="font-size: 2.5rem; color: var(--secondary-color); margin-bottom: var(--spacing-sm);">
+                                <i class="fas fa-users"></i>
+                            </div>
+                            <h3 style="font-size: 2rem; color: var(--text-primary); margin-bottom: var(--spacing-sm);">
+                                <?= number_format($total_students) ?></h3>
+                            <p style="color: var(--text-secondary);"><?= __('enrolled_students') ?></p>
                         </div>
-                        <div class="team-name">Kwame Mensah</div>
-                        <div class="team-role">Directeur Technique</div>
-                        <div class="team-bio">Spécialiste en développement web et solutions technologiques innovantes</div>
-                    </div>
-                    
-                    <div class="team-member">
-                        <div class="team-avatar">
-                            <i class="fas fa-user"></i>
+
+                        <div style="text-align: center;">
+                            <div
+                                style="font-size: 2.5rem; color: var(--accent-color); margin-bottom: var(--spacing-sm);">
+                                <i class="fas fa-chalkboard-teacher"></i>
+                            </div>
+                            <h3 style="font-size: 2rem; color: var(--text-primary); margin-bottom: var(--spacing-sm);">
+                                <?= number_format($total_instructors) ?></h3>
+                            <p style="color: var(--text-secondary);"><?= __('expert_instructors') ?></p>
                         </div>
-                        <div class="team-name">Aisha Diallo</div>
-                        <div class="team-role">Responsable Pédagogique</div>
-                        <div class="team-bio">Experte en conception de programmes éducatifs et formation des instructeurs</div>
-                    </div>
-                    
-                </div>
-            </div>
-        </div>
-    </section>
 
-    <!-- Founder Section -->
-    <section class="section">
-        <div class="container">
-            <div class="founder-section">
-                <div class="section-title">
-                    <h1><i class="fas fa-crown"></i> Founder</h1>
-                    <p>Founder description</p>
-                </div>
-                
-                <div class="founder-content">
-                    <div class="founder-image">
-                        <i class="fas fa-user-tie"></i>
-                    </div>
-                    
-                    <div>
-                        <h2>Dr. Faycal Soumana Adamou</h2>
-                        <p style="color: var(--primary-color); font-weight: 600; margin-bottom: var(--spacing-md);">
-                            Fondateur & CEO de TaaBia
-                        </p>
-                        <p style="margin-bottom: var(--spacing-lg);">
-                            Dr. Faycal Soumana Adamou est un entrepreneur visionnaire et expert en éducation avec plus de 15 ans d'expérience 
-                            dans le développement de solutions éducatives innovantes. Diplômé de l'Université du Ghana et de Harvard Business School, 
-                            il a consacré sa carrière à démocratiser l'accès à l'éducation de qualité en Afrique.
-                        </p>
-                        <p>
-                            Founder quote 
-                        </p>
+                        <div style="text-align: center;">
+                            <div
+                                style="font-size: 2.5rem; color: var(--success-color); margin-bottom: var(--spacing-sm);">
+                                <i class="fas fa-shopping-bag"></i>
+                            </div>
+                            <h3 style="font-size: 2rem; color: var(--text-primary); margin-bottom: var(--spacing-sm);">
+                                <?= number_format($total_products) ?></h3>
+                            <p style="color: var(--text-secondary);"><?= __('available_products') ?></p>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </section>
+            </section>
 
-    <!-- Testimonials Section -->
-    <section class="section">
-        <div class="container">
-            <div class="testimonials-section">
-                <div class="section-title">
-                    <h1><i class="fas fa-quote-left"></i> Testimonials title </h1>
-                    <p>Testimonials description </p>
+
+
+            <?php
+            // Récupération des chiffres clés
+            require_once '../../includes/db.php';
+
+            $total_students   = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'student' AND is_active = 1")->fetchColumn();
+            $total_teachers   = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'instructor' AND is_active = 1")->fetchColumn();
+            $total_courses    = $pdo->query("SELECT COUNT(*) FROM courses WHERE status = 'published' AND is_active = 1")->fetchColumn();
+            $total_products   = $pdo->query("SELECT COUNT(*) FROM products WHERE status = 'active' AND is_active = 1")->fetchColumn();
+            ?>
+            <section class="section stats">
+                <h2>🚀 <?= __('key_figures') ?></h2>
+                <div class="stats-grid">
+                    <div class="stat">
+                        <h3><?= number_format($total_students) ?></h3>
+                        <p><?= __('enrolled_students') ?></p>
+                    </div>
+                    <div class="stat">
+                        <h3><?= number_format($total_teachers) ?></h3>
+                        <p><?= __('active_instructors') ?></p>
+                    </div>
+                    <div class="stat">
+                        <h3><?= number_format($total_courses) ?></h3>
+                        <p><?= __('online_courses') ?></p>
+                    </div>
+                    <div class="stat">
+                        <h3><?= number_format($total_products) ?></h3>
+                        <p><?= __('products_sold') ?></p>
+                    </div>
                 </div>
-                
-                <div class="testimonials-grid">
+            </section>
+
+
+
+            <!-- Team Section -->
+            <section class="section">
+                <div class="container">
+                    <div class="team-section">
+                        <div class="section-title">
+                            <h1><i class="fas fa-users"></i> <?= __('our_team') ?></h1>
+                            <p><?= __('team_description') ?></p>
+                        </div>
+
+                        <div class="team-grid">
+                            <div class="team-member">
+                                <div class="team-avatar">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="team-name">Sarah Johnson</div>
+                                <div class="team-role">Directrice Générale</div>
+                                <div class="team-bio">Experte en éducation avec 10+ ans d'expérience dans l'innovation
+                                    pédagogique</div>
+                            </div>
+
+                            <div class="team-member">
+                                <div class="team-avatar">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="team-name">Kwame Mensah</div>
+                                <div class="team-role">Directeur Technique</div>
+                                <div class="team-bio">Spécialiste en développement web et solutions technologiques
+                                    innovantes</div>
+                            </div>
+
+                            <div class="team-member">
+                                <div class="team-avatar">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="team-name">Aisha Diallo</div>
+                                <div class="team-role">Responsable Pédagogique</div>
+                                <div class="team-bio">Experte en conception de programmes éducatifs et formation des
+                                    instructeurs</div>
+                            </div>
+
+                            <div class="team-member">
+                                <div class="team-avatar">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="team-name">David Osei</div>
+                                <div class="team-role">Responsable Marketing</div>
+                                <div class="team-bio">Spécialiste en stratégies marketing digital et développement de la
+                                    communauté</div>
+                            </div>
+
+
+                            <div class="team-member">
+                                <div class="team-avatar">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="team-name">Kwame Mensah</div>
+                                <div class="team-role">Directeur Technique</div>
+                                <div class="team-bio">Spécialiste en développement web et solutions technologiques
+                                    innovantes</div>
+                            </div>
+
+                            <div class="team-member">
+                                <div class="team-avatar">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="team-name">Aisha Diallo</div>
+                                <div class="team-role">Responsable Pédagogique</div>
+                                <div class="team-bio">Experte en conception de programmes éducatifs et formation des
+                                    instructeurs</div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Founder Section -->
+            <!-- Featured Instructors Section -->
+            <?php if (!empty($featured_instructors)): ?>
+                <section class="section" style="background: var(--bg-secondary);">
+                    <div class="container">
+                        <div class="section-title">
+                            <h1><i class="fas fa-chalkboard-teacher"></i> <?= __('featured_instructors') ?></h1>
+                            <p><?= __('featured_instructors_description') ?></p>
+                        </div>
+
+                        <div class="grid"
+                            style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--spacing-xl);">
+                            <?php foreach ($featured_instructors as $instructor): ?>
+                                <div class="card" style="text-align: center; padding: var(--spacing-xl);">
+                                    <div
+                                        style="width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); display: flex; align-items: center; justify-content: center; margin: 0 auto var(--spacing-lg); color: white; font-size: 2rem;">
+                                        <?php if ($instructor['profile_image']): ?>
+                                            <img src="../../uploads/<?= htmlspecialchars($instructor['profile_image']) ?>"
+                                                alt="<?= htmlspecialchars($instructor['fullname']) ?>"
+                                                style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+                                        <?php else: ?>
+                                            <i class="fas fa-user"></i>
+                                        <?php endif; ?>
+                                    </div>
+                                    <h3 style="margin-bottom: var(--spacing-sm);">
+                                        <?= htmlspecialchars($instructor['fullname']) ?></h3>
+                                    <p style="color: var(--text-secondary); margin-bottom: var(--spacing-md);">
+                                        <?= htmlspecialchars($instructor['email']) ?></p>
+                                    <div
+                                        style="display: flex; justify-content: center; gap: var(--spacing-lg); margin-bottom: var(--spacing-lg);">
+                                        <div style="text-align: center;">
+                                            <div style="font-size: 1.5rem; font-weight: 600; color: var(--primary-color);">
+                                                <?= $instructor['course_count'] ?></div>
+                                            <div style="font-size: 0.875rem; color: var(--text-secondary);"><?= __('courses_count') ?></div>
+                                        </div>
+                                        <div style="text-align: center;">
+                                            <div style="font-size: 1.5rem; font-weight: 600; color: var(--success-color);">
+                                                <?= number_format($instructor['avg_rating'], 1) ?></div>
+                                            <div style="font-size: 0.875rem; color: var(--text-secondary);"><?= __('average_rating') ?></div>
+                                        </div>
+                                    </div>
+                                    <a href="courses.php?instructor=<?= urlencode($instructor['fullname']) ?>"
+                                        class="btn btn-primary">
+                                        <i class="fas fa-eye"></i> <?= __('view_courses') ?>
+                                    </a>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </section>
+            <?php endif; ?>
+
+            <!-- Recent Achievements Section -->
+            <?php if (!empty($recent_achievements)): ?>
+                <section class="section">
+                    <div class="container">
+                        <div class="section-title">
+                            <h1><i class="fas fa-trophy"></i> <?= __('recent_achievements') ?></h1>
+                            <p><?= __('recent_achievements_description') ?></p>
+                        </div>
+
+                        <div class="grid"
+                            style="grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: var(--spacing-lg);">
+                            <?php foreach ($recent_achievements as $achievement): ?>
+                                <div class="card" style="display: flex; align-items: center; gap: var(--spacing-lg);">
+                                    <div
+                                        style="width: 60px; height: 60px; border-radius: 50%; background: var(--primary-color); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem; flex-shrink: 0;">
+                                        <i class="fas fa-graduation-cap"></i>
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <h4 style="margin-bottom: var(--spacing-sm);">
+                                            <?= htmlspecialchars($achievement['title']) ?></h4>
+                                        <p style="color: var(--text-secondary); margin-bottom: var(--spacing-sm);">
+                                            <i class="fas fa-user"></i> <?= htmlspecialchars($achievement['instructor']) ?>
+                                        </p>
+                                        <p style="color: var(--text-light); font-size: 0.875rem;">
+                                            <i class="fas fa-calendar"></i>
+                                            <?= date('d/m/Y', strtotime($achievement['created_at'])) ?>
+                                        </p>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </section>
+            <?php endif; ?>
+
+            <section class="section">
+                <div class="container">
+                    <div class="founder-section">
+                        <div class="section-title">
+                            <h1><i class="fas fa-crown"></i> <?= __('founder') ?></h1>
+                            <p><?= __('founder_description') ?></p>
+                        </div>
+
+                        <div class="founder-content">
+                            <div class="founder-image">
+                                <i class="fas fa-user-tie"></i>
+                            </div>
+
+                            <div>
+                                <h2>Dr. Faycal Soumana Adamou</h2>
+                                <p
+                                    style="color: var(--primary-color); font-weight: 600; margin-bottom: var(--spacing-md);">
+                                    <?= __('founder_ceo') ?>
+                                </p>
+                                <p style="margin-bottom: var(--spacing-lg);">
+                                    <?= __('founder_bio') ?>
+                                </p>
+                                <p>
+                                    <?= __('founder_quote') ?>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Testimonials Section -->
+            <section class="section">
+                <div class="container">
+                    <div class="testimonials-section">
+                        <div class="section-title">
+                            <h1><i class="fas fa-quote-left"></i> <?= __('testimonials') ?></h1>
+                            <p><?= __('testimonials_description') ?></p>
+                        </div>
+
+                        <div class="testimonials-grid">
+                            <div class="testimonial">
+                                <div class="testimonial-text">
+                                    "<?= __('testimonial_4') ?>"
+                                </div>
+                                <div class="testimonial-author"><?= __('testimonial_4_author') ?></div>
+                                <div class="testimonial-role"><?= __('testimonial_4_role') ?></div>
+                            </div>
+
+                            <div class="testimonial">
+                                <div class="testimonial-text">
+                                    "<?= __('testimonial_5') ?>"
+                                </div>
+                                <div class="testimonial-author"><?= __('testimonial_5_author') ?></div>
+                                <div class="testimonial-role"><?= __('testimonial_5_role') ?></div>
+                            </div>
+
+                            <div class="testimonial">
+                                <div class="testimonial-text">
+                                    "<?= __('testimonial_6') ?>"
+                                </div>
+                                <div class="testimonial-author"><?= __('testimonial_6_author') ?></div>
+                                <div class="testimonial-role"><?= __('testimonial_6_role') ?></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="testimonials">
+                <h2><?= __('testimonials') ?></h2>
+                <div class="testimonials-list">
                     <div class="testimonial">
-                        <div class="testimonial-text">
-                            "Testimonial1 text "
-                        </div>
-                        <div class="testimonial-author">Fatou Diop</div>
-                        <div class="testimonial-role">Développeuse Web, Dakar</div>
+                        <img src="../../uploads/testimonial1.jpg" alt="Photo de Jean Dupont" class="testimonial-image"
+                            style="width:80px; height:80px; border-radius:50%; object-fit:cover; margin-bottom:10px;">
+                        <blockquote>
+                            "<?= __('testimonial_1') ?>"
+                        </blockquote>
+                        <p class="testimonial-author"><?= __('testimonial_1_author') ?></p>
                     </div>
-                    
                     <div class="testimonial">
-                        <div class="testimonial-text">
-                            "Testimonial2_textc
-                        </div>
-                        <div class="testimonial-author">Dr. Kwesi Owusu</div>
-                        <div class="testimonial-role">Instructeur en Marketing Digital</div>
+                        <img src="../../uploads/testimonial2.jpg" alt="Photo de Fatou Ndiaye" class="testimonial-image"
+                            style="width:80px; height:80px; border-radius:50%; object-fit:cover; margin-bottom:10px;">
+                        <blockquote>
+                            "<?= __('testimonial_2') ?>"
+                        </blockquote>
+                        <p class="testimonial-author"><?= __('testimonial_2_author') ?></p>
                     </div>
-                    
                     <div class="testimonial">
-                        <div class="testimonial-text">
-                            "Testimonial3_text  
-                        </div>
-                        <div class="testimonial-author">Aminata Traoré</div>
-                        <div class="testimonial-role">Entrepreneure, Bamako</div>
+                        <img src="../../uploads/testimonial3.jpg" alt="Photo de Mohamed Ben Ali"
+                            class="testimonial-image"
+                            style="width:80px; height:80px; border-radius:50%; object-fit:cover; margin-bottom:10px;">
+                        <blockquote>
+                            "<?= __('testimonial_3') ?>"
+                        </blockquote>
+                        <p class="testimonial-author"><?= __('testimonial_3_author') ?></p>
                     </div>
                 </div>
-            </div>
-        </div>
-    </section>
+            </section>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-section">
-                    <h3><i class="fas fa-graduation-cap"></i> TaaBia</h3>
-                    <p>footer</p>
-                    <p>footer mission description </p>
+            <style>
+                .testimonials-list {
+                    display: flex;
+                    gap: 32px;
+                    flex-wrap: wrap;
+                }
+
+                .testimonial {
+                    background: #fff;
+                    border-radius: 12px;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+                    padding: 24px;
+                    text-align: center;
+                    max-width: 300px;
+                    flex: 1;
+                }
+
+                .testimonial blockquote {
+                    font-style: italic;
+                    color: #555;
+                    margin-bottom: 12px;
+                }
+
+                .testimonial-author {
+                    font-weight: 600;
+                    color: #333;
+                }
+            </style>
+
+            <!-- Footer -->
+            <footer class="footer">
+                <div class="container">
+                    <div class="footer-content">
+                        <div class="footer-section">
+                            <h3><i class="fas fa-graduation-cap"></i> TaaBia</h3>
+                            <p><?= __('footer_description') ?></p>
+                            <p><?= __('footer_mission') ?></p>
+                        </div>
+
+                        <div class="footer-section">
+                            <h3><?= __('footer_services') ?></h3>
+                            <a href="courses.php"><?= __('courses') ?></a>
+                            <a href="shop.php"><?= __('shop') ?></a>
+                            <a href="upcoming_events.php"><?= __('events') ?></a>
+                            <a href="contact.php"><?= __('support') ?></a>
+                        </div>
+
+                        <div class="footer-section">
+                            <h3><?= __('contact_us') ?></h3>
+                            <p><i class="fas fa-envelope"></i> <?= __('email') ?></p>
+                            <p><i class="fas fa-phone"></i> <?= __('phone') ?></p>
+                            <p><i class="fas fa-map-marker-alt"></i> <?= __('location') ?></p>
+                        </div>
+
+                        <div class="footer-section">
+                            <h3><?= __('footer_follow_us') ?></h3>
+                            <a href="#"><i class="fab fa-facebook"></i> Facebook</a>
+                            <a href="#"><i class="fab fa-twitter"></i> Twitter</a>
+                            <a href="#"><i class="fab fa-linkedin"></i> LinkedIn</a>
+                            <a href="#"><i class="fab fa-instagram"></i> Instagram</a>
+                        </div>
+                    </div>
+
+                    <div class="footer-bottom">
+                        <p>&copy; <?= date('Y') ?> TaaBia. <?= __('footer_rights_reserved') ?></p>
+                    </div>
                 </div>
-                
-                <div class="footer-section">
-                    <h3>services  </h3>
-                    <a href="courses.php"> Our courses  </a>
-                    <a href="shop.php"> OUR shop  </a>
-                    <a href="upcoming_events.php">Upcoming events  </a>
-                    <a href="contact.php"> support  </a>
-                </div>
-                
-                <div class="footer-section">
-                    <h3>Contact us </h3>
-                    <p><i class="fas fa-envelope"></i> footer contact email </p>
-                    <p><i class="fas fa-phone"></i> +23353489333</p>
-                    <p><i class="fas fa-map-marker-alt"></i> Accra, Ghana</p>
-                </div>
-                
-                <div class="footer-section">
-                    <h3>follow us</h3>
-                    <a href="#"><i class="fab fa-facebook"></i> Facebook</a>
-                    <a href="#"><i class="fab fa-twitter"></i> Twitter</a>
-                    <a href="#"><i class="fab fa-linkedin"></i> LinkedIn</a>
-                    <a href="#"><i class="fab fa-instagram"></i> Instagram</a>
-                </div>
-            </div>
-            
-            <div class="footer-bottom">
-                <p>&copy; <?= date('Y') ?> TaaBia. Foote rights reserved .</p>
-            </div>
-        </div>
-    </footer>
+            </footer>
 
-    <script>
-        // Hamburger Menu Functionality
-        const hamburger = document.getElementById('hamburger');
-        const navMenu = document.getElementById('nav-menu');
+            <script>
+                // Hamburger Menu Functionality
+                const hamburger = document.getElementById('hamburger');
+                const navMenu = document.getElementById('nav-menu');
 
-        hamburger.addEventListener('click', () => {
-            hamburger.classList.toggle('active');
-            navMenu.classList.toggle('active');
-        });
+                hamburger.addEventListener('click', () => {
+                    hamburger.classList.toggle('active');
+                    navMenu.classList.toggle('active');
+                });
 
-        // Close menu when clicking on a link
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', () => {
-                hamburger.classList.remove('active');
-                navMenu.classList.remove('active');
-            });
-        });
+                // Close menu when clicking on a link
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    link.addEventListener('click', () => {
+                        hamburger.classList.remove('active');
+                        navMenu.classList.remove('active');
+                    });
+                });
 
-        // Close menu when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!hamburger.contains(e.target) && !navMenu.contains(e.target)) {
-                hamburger.classList.remove('active');
-                navMenu.classList.remove('active');
-            }
-        });
-    </script>
+                // Close menu when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!hamburger.contains(e.target) && !navMenu.contains(e.target)) {
+                        hamburger.classList.remove('active');
+                        navMenu.classList.remove('active');
+                    }
+                });
+            </script>
 </body>
+
 </html>

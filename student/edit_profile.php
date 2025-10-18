@@ -36,7 +36,7 @@ try {
             if (!empty($_FILES['profile_image']['name'])) {
                 $allowed_types = ['jpg', 'jpeg', 'png', 'gif'];
                 $ext = strtolower(pathinfo($_FILES['profile_image']['name'], PATHINFO_EXTENSION));
-                
+
                 if (!in_array($ext, $allowed_types)) {
                     $error_message = "Seuls les fichiers JPG, PNG et GIF sont autorisés.";
                 } elseif ($_FILES['profile_image']['size'] > 5 * 1024 * 1024) { // 5MB
@@ -60,14 +60,13 @@ try {
 
                 $_SESSION['name'] = $name;
                 $success_message = "Profil mis à jour avec succès !";
-                
+
                 // Refresh user data
                 $stmt->execute([$student_id]);
                 $user = $stmt->fetch();
             }
         }
     }
-
 } catch (PDOException $e) {
     error_log("Database error in edit_profile: " . $e->getMessage());
     $error_message = "Une erreur est survenue. Veuillez réessayer.";
@@ -76,6 +75,7 @@ try {
 
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -93,7 +93,7 @@ try {
                 <h2><i class="fas fa-graduation-cap"></i> TaaBia</h2>
                 <p>Espace Apprenant</p>
             </div>
-            
+
             <nav class="student-nav">
                 <a href="index.php" class="student-nav-item">
                     <i class="fas fa-tachometer-alt"></i>
@@ -179,30 +179,30 @@ try {
                                 <label for="full_name" style="display: block; margin-bottom: var(--spacing-2); font-weight: 600; color: var(--gray-700);">
                                     <i class="fas fa-user"></i> Nom complet *
                                 </label>
-                                <input type="text" name="full_name" id="full_name" 
-                                       value="<?= htmlspecialchars($user['full_name']) ?>" 
-                                       required 
-                                       class="student-search-input"
-                                       placeholder="Votre nom complet">
+                                <input type="text" name="full_name" id="full_name"
+                                    value="<?= htmlspecialchars($user['full_name']) ?>"
+                                    required
+                                    class="student-search-input"
+                                    placeholder="Votre nom complet">
                             </div>
-                            
+
                             <div>
                                 <label for="email" style="display: block; margin-bottom: var(--spacing-2); font-weight: 600; color: var(--gray-700);">
                                     <i class="fas fa-envelope"></i> Adresse email *
                                 </label>
-                                <input type="email" name="email" id="email" 
-                                       value="<?= htmlspecialchars($user['email']) ?>" 
-                                       required 
-                                       class="student-search-input"
-                                       placeholder="votre@email.com">
+                                <input type="email" name="email" id="email"
+                                    value="<?= htmlspecialchars($user['email']) ?>"
+                                    required
+                                    class="student-search-input"
+                                    placeholder="votre@email.com">
                             </div>
                         </div>
-                        
+
                         <div style="margin-bottom: var(--spacing-6);">
                             <label for="profile_image" style="display: block; margin-bottom: var(--spacing-2); font-weight: 600; color: var(--gray-700);">
                                 <i class="fas fa-camera"></i> Photo de profil
                             </label>
-                            
+
                             <div style="display: flex; align-items: center; gap: var(--spacing-4);">
                                 <div style="
                                     width: 80px; 
@@ -216,37 +216,37 @@ try {
                                     justify-content: center;
                                 ">
                                     <?php if ($user['profile_image']): ?>
-                                        <img src="../uploads/<?= htmlspecialchars($user['profile_image']) ?>" 
-                                             alt="Photo de profil" 
-                                             style="width: 100%; height: 100%; object-fit: cover;">
+                                        <img src="../uploads/<?= htmlspecialchars($user['profile_image']) ?>"
+                                            alt="Photo de profil"
+                                            style="width: 100%; height: 100%; object-fit: cover;">
                                     <?php else: ?>
                                         <i class="fas fa-user" style="font-size: var(--font-size-xl); color: var(--gray-400);"></i>
                                     <?php endif; ?>
                                 </div>
-                                
+
                                 <div style="flex: 1;">
-                                    <input type="file" name="profile_image" id="profile_image" 
-                                           accept="image/*" 
-                                           class="student-search-input"
-                                           style="padding: var(--spacing-2);">
+                                    <input type="file" name="profile_image" id="profile_image"
+                                        accept="image/*"
+                                        class="student-search-input"
+                                        style="padding: var(--spacing-2);">
                                     <div style="font-size: var(--font-size-sm); color: var(--gray-500); margin-top: var(--spacing-1);">
                                         Formats acceptés: JPG, PNG, GIF (max 5MB)
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div style="display: flex; gap: var(--spacing-4); align-items: center;">
                             <button type="submit" class="student-btn student-btn-primary">
                                 <i class="fas fa-save"></i>
                                 Enregistrer les modifications
                             </button>
-                            
+
                             <a href="profile.php" class="student-btn student-btn-secondary">
                                 <i class="fas fa-times"></i>
                                 Annuler
                             </a>
-                            
+
                             <a href="change_password.php" class="student-btn student-btn-success">
                                 <i class="fas fa-key"></i>
                                 Changer le mot de passe
@@ -263,7 +263,7 @@ try {
                         <i class="fas fa-info-circle"></i> Informations du compte
                     </h3>
                 </div>
-                
+
                 <div style="padding: var(--spacing-6);">
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-4);">
                         <div style="
@@ -278,7 +278,7 @@ try {
                                 <?= date('d/m/Y', strtotime($user['created_at'])) ?>
                             </div>
                         </div>
-                        
+
                         <div style="
                             background: var(--gray-50); 
                             padding: var(--spacing-4); 
@@ -291,7 +291,7 @@ try {
                                 <?= ucfirst($user['role']) ?>
                             </div>
                         </div>
-                        
+
                         <div style="
                             background: var(--gray-50); 
                             padding: var(--spacing-4); 
@@ -314,7 +314,7 @@ try {
                     <i class="fas fa-arrow-left"></i>
                     Retour au profil
                 </a>
-                
+
                 <a href="change_password.php" class="student-btn student-btn-warning">
                     <i class="fas fa-key"></i>
                     Changer le mot de passe
@@ -329,26 +329,26 @@ try {
             const nameInput = document.getElementById('full_name');
             const emailInput = document.getElementById('email');
             const imageInput = document.getElementById('profile_image');
-            
+
             // Form validation
             form.addEventListener('submit', function(e) {
                 const name = nameInput.value.trim();
                 const email = emailInput.value.trim();
-                
+
                 if (!name) {
                     e.preventDefault();
                     alert('Veuillez saisir votre nom complet.');
                     nameInput.focus();
                     return;
                 }
-                
+
                 if (!email) {
                     e.preventDefault();
                     alert('Veuillez saisir votre adresse email.');
                     emailInput.focus();
                     return;
                 }
-                
+
                 if (!email.includes('@')) {
                     e.preventDefault();
                     alert('Veuillez saisir une adresse email valide.');
@@ -356,7 +356,7 @@ try {
                     return;
                 }
             });
-            
+
             // Image preview
             imageInput.addEventListener('change', function() {
                 const file = this.files[0];
@@ -378,4 +378,5 @@ try {
         });
     </script>
 </body>
+
 </html>

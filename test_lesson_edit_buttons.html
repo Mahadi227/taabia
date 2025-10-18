@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Lesson Edit Buttons</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .btn {
+            padding: 10px 20px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn:hover {
+            opacity: 0.8;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-input, .form-textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .form-textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        .analytics-details {
+            display: none;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .preview-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .preview-content {
+            background: white;
+            border-radius: 10px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .preview-header {
+            background: #007bff;
+            color: white;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .preview-body {
+            padding: 20px;
+        }
+        .preview-close {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Test Lesson Edit Buttons</h1>
+        
+        <form>
+            <div class="form-group">
+                <label>Lesson Title:</label>
+                <input type="text" id="title" class="form-input" value="Test Lesson Title">
+            </div>
+            
+            <div class="form-group">
+                <label>Lesson Content:</label>
+                <textarea id="content" class="form-textarea">This is test content for the lesson preview.</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Duration (minutes):</label>
+                <input type="number" id="duration" class="form-input" value="30">
+            </div>
+            
+            <div class="form-group">
+                <label>Content Type:</label>
+                <input type="hidden" id="content_type" value="video">
+            </div>
+            
+            <div class="form-group">
+                <label>File URL:</label>
+                <input type="url" id="file_url" class="form-input" value="https://example.com/video.mp4">
+            </div>
+            
+            <div class="form-group">
+                <button type="button" class="btn btn-secondary" onclick="toggleAnalyticsDetails()" id="toggleDetailsBtn">
+                    <i class="fas fa-chart-line"></i> <span id="toggleText">View Details</span>
+                </button>
+                
+                <button type="button" class="btn btn-primary" onclick="openProfessionalPreview()" id="previewBtn">
+                    <i class="fas fa-eye"></i> Preview Lesson
+                </button>
+            </div>
+            
+            <div class="analytics-details" id="analyticsDetails">
+                <h3>Analytics Details</h3>
+                <p>This is the analytics details section that should be toggled.</p>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        let isAnalyticsDetailsVisible = false;
+
+        function toggleAnalyticsDetails() {
+            console.log('toggleAnalyticsDetails called');
+            const details = document.getElementById('analyticsDetails');
+            const toggleText = document.getElementById('toggleText');
+
+            if (!details) {
+                console.error('analyticsDetails element not found');
+                return;
+            }
+
+            if (!toggleText) {
+                console.error('toggleText element not found');
+                return;
+            }
+
+            isAnalyticsDetailsVisible = !isAnalyticsDetailsVisible;
+            console.log('isAnalyticsDetailsVisible:', isAnalyticsDetailsVisible);
+
+            if (isAnalyticsDetailsVisible) {
+                details.style.display = 'block';
+                toggleText.textContent = 'Hide Details';
+            } else {
+                details.style.display = 'none';
+                toggleText.textContent = 'View Details';
+            }
+        }
+
+        function openProfessionalPreview() {
+            console.log('openProfessionalPreview called');
+            
+            const titleElement = document.getElementById('title');
+            const contentElement = document.getElementById('content');
+            const durationElement = document.getElementById('duration');
+            const contentTypeElement = document.getElementById('content_type');
+            const fileUrlElement = document.getElementById('file_url');
+            
+            if (!titleElement || !contentElement || !durationElement || !contentTypeElement || !fileUrlElement) {
+                console.error('Required form elements not found');
+                alert('Error: Form elements not found. Please refresh the page and try again.');
+                return;
+            }
+            
+            const title = titleElement.value || 'Untitled Lesson';
+            const content = contentElement.value || 'No content available';
+            const duration = durationElement.value || 0;
+            const contentType = contentTypeElement.value;
+            const fileUrl = fileUrlElement.value;
+            
+            console.log('Preview data:', { title, content, duration, contentType, fileUrl });
+
+            const modal = document.createElement('div');
+            modal.className = 'preview-modal';
+            modal.innerHTML = `
+                <div class="preview-content">
+                    <div class="preview-header">
+                        <h2>${title}</h2>
+                        <button class="preview-close" onclick="closePreview()">×</button>
+                    </div>
+                    <div class="preview-body">
+                        <p><strong>Duration:</strong> ${duration} minutes</p>
+                        <p><strong>Content Type:</strong> ${contentType}</p>
+                        <p><strong>Content:</strong></p>
+                        <p>${content}</p>
+                        ${fileUrl ? `<p><strong>File URL:</strong> ${fileUrl}</p>` : ''}
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // Add click outside to close
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    closePreview();
+                }
+            });
+        }
+
+        function closePreview() {
+            console.log('closePreview called');
+            const modal = document.querySelector('.preview-modal');
+            if (modal) {
+                modal.remove();
+                console.log('Preview modal closed');
+            } else {
+                console.log('No preview modal found to close');
+            }
+        }
+
+        // Add backup event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Content Loaded - Adding event listeners');
+            
+            const toggleBtn = document.getElementById('toggleDetailsBtn');
+            const previewBtn = document.getElementById('previewBtn');
+            
+            if (toggleBtn) {
+                console.log('Adding event listener to toggle button');
+                toggleBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Toggle button clicked via event listener');
+                    toggleAnalyticsDetails();
+                });
+            } else {
+                console.error('Toggle button not found');
+            }
+            
+            if (previewBtn) {
+                console.log('Adding event listener to preview button');
+                previewBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Preview button clicked via event listener');
+                    openProfessionalPreview();
+                });
+            } else {
+                console.error('Preview button not found');
+            }
+        });
+
+        // Make functions globally accessible
+        window.toggleAnalyticsDetails = toggleAnalyticsDetails;
+        window.openProfessionalPreview = openProfessionalPreview;
+        window.closePreview = closePreview;
+    </script>
+</body>
+</html>

@@ -1,8 +1,15 @@
 <?php
+// Start output buffering to prevent any accidental output
+ob_start();
+
+// Handle language switching first
+require_once 'language_handler.php';
+
+// Now load the session and other includes
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/function.php';
-
+require_once '../includes/i18n.php';
 require_role('admin');
 
 // Initialize variables
@@ -54,464 +61,658 @@ $params[] = $offset;
 try {
     $stmt = $pdo->prepare($query);
     if ($stmt->execute($params)) {
-        $messages = $stmt->fetchAll();
+        $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 } catch (PDOException $e) {
     error_log("Database error in admin/contact_messages.php: " . $e->getMessage());
+    $error_message = "Une erreur est survenue lors du chargement des messages.";
 }
 
-// Calculate statistics
-$today_messages = 0;
-$week_messages = 0;
-$month_messages = 0;
-$total_messages_count = 0;
+// Get statistics
+$stats = [
+    'total' => 0,
+    'today' => 0,
+    'this_week' => 0,
+    'this_month' => 0
+];
 
 try {
-    $stats_stmt = $pdo->query("SELECT 
-        COUNT(*) as total_count,
-        COUNT(CASE WHEN DATE(created_at) = CURDATE() THEN 1 END) as today_count,
-        COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 END) as week_count,
-        COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 END) as month_count
-        FROM contact_messages");
-    if ($stats_stmt->execute()) {
-        $stats = $stats_stmt->fetch();
-        $total_messages_count = $stats['total_count'] ?? 0;
-        $today_messages = $stats['today_count'] ?? 0;
-        $week_messages = $stats['week_count'] ?? 0;
-        $month_messages = $stats['month_count'] ?? 0;
-    }
+    // Total messages
+    $stmt = $pdo->query("SELECT COUNT(*) FROM contact_messages");
+    $stats['total'] = $stmt->fetchColumn();
+
+    // Today's messages
+    $stmt = $pdo->query("SELECT COUNT(*) FROM contact_messages WHERE DATE(created_at) = CURDATE()");
+    $stats['today'] = $stmt->fetchColumn();
+
+    // This week's messages
+    $stmt = $pdo->query("SELECT COUNT(*) FROM contact_messages WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+    $stats['this_week'] = $stmt->fetchColumn();
+
+    // This month's messages
+    $stmt = $pdo->query("SELECT COUNT(*) FROM contact_messages WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
+    $stats['this_month'] = $stmt->fetchColumn();
 } catch (PDOException $e) {
     error_log("Database error in admin/contact_messages.php stats: " . $e->getMessage());
 }
 ?>
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Messages de Contact | Admin | TaaBia</title>
-    
+    <title><?= __('contact_messages') ?> | <?= __('admin_panel') ?> | TaaBia</title>
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Admin Styles -->
     <link rel="stylesheet" href="admin-styles.css">
+
+    <style>
+        /* Admin Language Switcher */
+        .admin-language-switcher {
+            position: relative;
+            display: inline-block;
+        }
+
+        .admin-language-dropdown {
+            position: relative;
+        }
+
+        .admin-language-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--light-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--dark-color);
+            transition: var(--transition);
+        }
+
+        .admin-language-btn:hover {
+            background: white;
+            border-color: var(--primary-color);
+        }
+
+        .admin-language-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-sm);
+            box-shadow: var(--shadow-lg);
+            min-width: 150px;
+            z-index: 1000;
+            display: none;
+            margin-top: 4px;
+        }
+
+        .admin-language-menu.show {
+            display: block;
+        }
+
+        .admin-language-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            text-decoration: none;
+            color: var(--dark-color);
+            transition: var(--transition);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-language-item:last-child {
+            border-bottom: none;
+        }
+
+        .admin-language-item:hover {
+            background: var(--light-color);
+        }
+
+        .admin-language-item.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .language-flag {
+            font-size: 16px;
+        }
+
+        .language-name {
+            flex: 1;
+            font-size: 14px;
+        }
+
+        .admin-language-item i {
+            font-size: 12px;
+            margin-left: auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            box-shadow: var(--shadow-light);
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .stat-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .stat-icon.total {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+        }
+
+        .stat-icon.today {
+            background: linear-gradient(45deg, #f093fb, #f5576c);
+        }
+
+        .stat-icon.week {
+            background: linear-gradient(45deg, #4facfe, #00f2fe);
+        }
+
+        .stat-icon.month {
+            background: linear-gradient(45deg, #43e97b, #38f9d7);
+        }
+
+        .stat-info {
+            flex: 1;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--dark-color);
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        .message-card {
+            background: white;
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: var(--shadow-light);
+            border: 1px solid var(--border-color);
+            transition: var(--transition);
+        }
+
+        .message-card:hover {
+            box-shadow: var(--shadow-medium);
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .message-info {
+            flex: 1;
+        }
+
+        .message-name {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--dark-color);
+            margin-bottom: 0.25rem;
+        }
+
+        .message-email {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 0.875rem;
+        }
+
+        .message-email:hover {
+            text-decoration: underline;
+        }
+
+        .message-date {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .message-content {
+            color: var(--text-primary);
+            line-height: 1.6;
+            margin-bottom: 1rem;
+        }
+
+        .message-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: var(--border-radius-sm);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: var(--light-color);
+            color: var(--dark-color);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--gray-100);
+        }
+
+        .btn-danger {
+            background: var(--danger-color);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: var(--danger-dark);
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        .pagination a {
+            padding: 0.5rem 1rem;
+            border-radius: var(--border-radius-sm);
+            text-decoration: none;
+            color: var(--dark-color);
+            border: 1px solid var(--border-color);
+            transition: var(--transition);
+        }
+
+        .pagination a:hover {
+            background: var(--light-color);
+        }
+
+        .pagination a.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .message-header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .message-actions {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
 </head>
 
 <body>
-    <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h2>TaaBia Admin</h2>
-            <p><?php
-                $current_user = null;
-                try {
-                    $stmt = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
-                    $stmt->execute([current_user_id()]);
-                    $current_user = $stmt->fetch();
-                } catch (PDOException $e) {
-                    error_log("Error fetching current user: " . $e->getMessage());
-                }
-                echo htmlspecialchars($current_user['full_name'] ?? 'Administrateur');
-            ?></p>
-        </div>
-        
-        <nav class="sidebar-nav">
-            <div class="nav-item">
-                <a href="index.php" class="nav-link">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Tableau de bord</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="users.php" class="nav-link">
-                    <i class="fas fa-users"></i>
-                    <span>Utilisateurs</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="courses.php" class="nav-link">
-                    <i class="fas fa-book"></i>
-                    <span>Formations</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="products.php" class="nav-link">
-                    <i class="fas fa-box"></i>
-                    <span>Produits</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="orders.php" class="nav-link">
-                    <i class="fas fa-shopping-cart"></i>
-                    <span>Commandes</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="events.php" class="nav-link">
-                    <i class="fas fa-calendar-alt"></i>
-                    <span>Événements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="contact_messages.php" class="nav-link active">
-                    <i class="fas fa-envelope"></i>
-                    <span>Messages</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="transactions.php" class="nav-link">
-                    <i class="fas fa-exchange-alt"></i>
-                    <span>Transactions</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payout_requests.php" class="nav-link">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <span>Demandes de paiement</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="earnings.php" class="nav-link">
-                    <i class="fas fa-wallet"></i>
-                    <span>Revenus</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payments.php" class="nav-link">
-                    <i class="fas fa-money-bill-wave"></i>
-                    <span>Paiements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payment_stats.php" class="nav-link">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Statistiques</span>
-                </a>
-            </div>
-            
-            <div class="nav-item" style="margin-top: 2rem;">
-                <a href="../auth/logout.php" class="nav-link">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </nav>
-    </div>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <?php include 'includes/sidebar.php'; ?>
 
-    <!-- Main Content -->
-    <div class="main-content">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <h1 class="page-title">Messages de Contact</h1>
-                
-                <div class="header-actions">
-                    <div class="user-menu">
-                        <div class="user-avatar">
-                            <i class="fas fa-user"></i>
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Header -->
+            <div class="content-header">
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div class="page-title">
+                        <h1><i class="fas fa-envelope"></i> <?= __('contact_messages') ?></h1>
+                        <p><?= __('manage_contact_messages') ?></p>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 20px;">
+                        <!-- Language Switcher -->
+                        <div class="admin-language-switcher">
+                            <div class="admin-language-dropdown">
+                                <button class="admin-language-btn" onclick="toggleAdminLanguageDropdown()">
+                                    <i class="fas fa-globe"></i>
+                                    <span><?= getCurrentLanguage() == 'fr' ? 'Français' : 'English' ?></span>
+                                    <i class="fas fa-chevron-down"></i>
+                                </button>
+
+                                <div class="admin-language-menu" id="adminLanguageDropdown">
+                                    <a href="?lang=fr" class="admin-language-item <?= getCurrentLanguage() == 'fr' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇫🇷</span>
+                                        <span class="language-name">Français</span>
+                                        <?php if (getCurrentLanguage() == 'fr'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                    <a href="?lang=en" class="admin-language-item <?= getCurrentLanguage() == 'en' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇬🇧</span>
+                                        <span class="language-name">English</span>
+                                        <?php if (getCurrentLanguage() == 'en'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div style="font-weight: 600; font-size: 0.875rem;">Administrateur</div>
-                            <div style="font-size: 0.75rem; opacity: 0.7;">Admin Panel</div>
+
+                        <!-- User Menu -->
+                        <div class="user-menu">
+                            <div class="user-avatar"><i class="fas fa-user"></i></div>
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.875rem;"><?= htmlspecialchars($current_user['full_name'] ?? __('administrator')) ?></div>
+                                <div style="font-size: 0.75rem; opacity: 0.7;"><?= __('admin_panel') ?></div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </header>
 
-        <!-- Content -->
-        <div class="content">
+            <!-- Messages -->
+            <?php if (isset($error_message)): ?>
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-circle"></i> <?= $error_message ?>
+                </div>
+            <?php endif; ?>
+
             <!-- Search and Filters -->
-            <div class="search-filters">
-                <form method="GET" class="filters-row">
-                    <div class="filter-group">
-                        <label class="form-label">Rechercher</label>
-                        <input type="text" name="search" class="form-control" 
-                               placeholder="Nom, email ou message..." 
-                               value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label class="form-label">Date de début</label>
-                        <input type="date" name="date_from" class="form-control" 
-                               value="<?= htmlspecialchars($_GET['date_from'] ?? '') ?>">
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label class="form-label">Date de fin</label>
-                        <input type="date" name="date_to" class="form-control" 
-                               value="<?= htmlspecialchars($_GET['date_to'] ?? '') ?>">
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label class="form-label">&nbsp;</label>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-search"></i>
-                            Filtrer
-                        </button>
-                        <a href="contact_messages.php" class="btn btn-secondary">
-                            <i class="fas fa-times"></i>
-                            Réinitialiser
-                        </a>
-                    </div>
-                </form>
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title"><?= __('filters_and_search') ?></h3>
+                </div>
+                <div class="card-body">
+                    <form method="GET" class="form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="search" class="form-label"><?= __('search') ?></label>
+                                <input type="text" id="search" name="search" class="form-control"
+                                    placeholder="<?= __('search_messages_placeholder') ?>"
+                                    value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="date_from" class="form-label"><?= __('date_from') ?></label>
+                                <input type="date" id="date_from" name="date_from" class="form-control"
+                                    value="<?= htmlspecialchars($_GET['date_from'] ?? '') ?>">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="date_to" class="form-label"><?= __('date_to') ?></label>
+                                <input type="date" id="date_to" name="date_to" class="form-control"
+                                    value="<?= htmlspecialchars($_GET['date_to'] ?? '') ?>">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">&nbsp;</label>
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-search"></i> <?= __('filter') ?>
+                                    </button>
+                                    <a href="contact_messages.php" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i> <?= __('reset') ?>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
             </div>
 
-            <!-- Stats Cards -->
+            <!-- Statistics -->
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-header">
-                        <div class="stat-icon users">
+                        <div class="stat-icon total">
                             <i class="fas fa-envelope"></i>
                         </div>
                         <div class="stat-info">
-                            <div class="stat-value"><?= number_format($total_messages_count) ?></div>
-                            <div class="stat-label">Total Messages</div>
+                            <div class="stat-value"><?= number_format($stats['total']) ?></div>
+                            <div class="stat-label"><?= __('total_messages') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
-                        <div class="stat-icon success">
+                        <div class="stat-icon today">
                             <i class="fas fa-calendar-day"></i>
                         </div>
                         <div class="stat-info">
-                            <div class="stat-value"><?= number_format($today_messages) ?></div>
-                            <div class="stat-label">Aujourd'hui</div>
+                            <div class="stat-value"><?= number_format($stats['today']) ?></div>
+                            <div class="stat-label"><?= __('today') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
-                        <div class="stat-icon students">
+                        <div class="stat-icon week">
                             <i class="fas fa-calendar-week"></i>
                         </div>
                         <div class="stat-info">
-                            <div class="stat-value"><?= number_format($week_messages) ?></div>
-                            <div class="stat-label">Cette semaine</div>
+                            <div class="stat-value"><?= number_format($stats['this_week']) ?></div>
+                            <div class="stat-label"><?= __('this_week') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
-                        <div class="stat-icon courses">
+                        <div class="stat-icon month">
                             <i class="fas fa-calendar-alt"></i>
                         </div>
                         <div class="stat-info">
-                            <div class="stat-value"><?= number_format($month_messages) ?></div>
-                            <div class="stat-label">Ce mois</div>
+                            <div class="stat-value"><?= number_format($stats['this_month']) ?></div>
+                            <div class="stat-label"><?= __('this_month') ?></div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Messages Table -->
+            <!-- Messages List -->
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">Liste des Messages de Contact</h3>
+                    <h3 class="card-title"><?= __('messages_list') ?></h3>
                     <div class="d-flex gap-2">
-                        <span class="badge badge-primary"><?= $total_messages ?> messages</span>
+                        <span class="badge badge-primary"><?= $total_messages ?> <?= __('messages_count') ?></span>
                     </div>
                 </div>
-                
-                <div class="table-container">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Nom</th>
-                                <th>Email</th>
-                                <th>Message</th>
-                                <th>Reçu le</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($messages)): ?>
-                                <tr>
-                                    <td colspan="5" class="text-center" style="padding: 3rem;">
-                                        <i class="fas fa-envelope" style="font-size: 3rem; color: var(--text-light); margin-bottom: 1rem; display: block;"></i>
-                                        <p>Aucun message trouvé</p>
-                                    </td>
-                                </tr>
-                            <?php else: ?>
-                                <?php foreach ($messages as $msg): ?>
-                                    <tr>
-                                        <td>
-                                            <div style="font-weight: 500;"><?= htmlspecialchars($msg['name']) ?></div>
-                                        </td>
-                                        <td>
-                                            <div style="font-size: 0.875rem; color: var(--text-secondary);">
-                                                <?= htmlspecialchars($msg['email']) ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div style="font-size: 0.875rem; color: var(--text-secondary); max-width: 300px; overflow: hidden; text-overflow: ellipsis;">
-                                                <?= htmlspecialchars(substr($msg['message'], 0, 100)) ?>...
-                                            </div>
-                                            <div style="font-size: 0.75rem; color: var(--text-light); margin-top: 0.25rem;">
-                                                <button type="button" class="btn btn-sm btn-secondary" 
-                                                        onclick="showMessage('<?= htmlspecialchars($msg['name']) ?>', '<?= htmlspecialchars($msg['email']) ?>', '<?= htmlspecialchars(str_replace("'", "\\'", $msg['message'])) ?>')">
-                                                    Voir le message complet
-                                                </button>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div style="font-size: 0.875rem; color: var(--text-secondary);">
-                                                <?= date('d/m/Y', strtotime($msg['created_at'])) ?>
-                                            </div>
-                                            <div style="font-size: 0.75rem; color: var(--text-light);">
-                                                <?= date('H:i', strtotime($msg['created_at'])) ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="d-flex gap-1">
-                                                <a href="mailto:<?= htmlspecialchars($msg['email']) ?>" 
-                                                   class="btn btn-sm btn-primary" 
-                                                   title="Répondre par email">
-                                                    <i class="fas fa-reply"></i>
-                                                </a>
-                                                <button type="button" 
-                                                        class="btn btn-sm btn-info" 
-                                                        title="Voir le message complet"
-                                                        onclick="showMessage('<?= htmlspecialchars($msg['name']) ?>', '<?= htmlspecialchars($msg['email']) ?>', '<?= htmlspecialchars(str_replace("'", "\\'", $msg['message'])) ?>')">
-                                                    <i class="fas fa-eye"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
 
-                <!-- Pagination -->
-                <?php if ($total_pages > 1): ?>
-                    <div class="pagination">
-                        <?php if ($current_page > 1): ?>
-                            <a href="?page=<?= $current_page - 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" 
-                               class="btn btn-secondary">
-                                <i class="fas fa-chevron-left"></i>
-                            </a>
-                        <?php endif; ?>
-                        
-                        <?php for ($i = max(1, $current_page - 2); $i <= min($total_pages, $current_page + 2); $i++): ?>
-                            <a href="?page=<?= $i ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" 
-                               class="btn <?= $i === $current_page ? 'btn-primary active' : 'btn-secondary' ?>">
-                                <?= $i ?>
-                            </a>
-                        <?php endfor; ?>
-                        
-                        <?php if ($current_page < $total_pages): ?>
-                            <a href="?page=<?= $current_page + 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" 
-                               class="btn btn-secondary">
-                                <i class="fas fa-chevron-right"></i>
-                            </a>
-                        <?php endif; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
+                <div class="card-body">
+                    <?php if (empty($messages)): ?>
+                        <div class="text-center" style="padding: 3rem;">
+                            <i class="fas fa-envelope" style="font-size: 3rem; color: var(--text-light); margin-bottom: 1rem; display: block;"></i>
+                            <p><?= __('no_messages_found') ?></p>
+                        </div>
+                    <?php else: ?>
+                        <?php foreach ($messages as $message): ?>
+                            <div class="message-card">
+                                <div class="message-header">
+                                    <div class="message-info">
+                                        <div class="message-name"><?= htmlspecialchars($message['name']) ?></div>
+                                        <a href="mailto:<?= htmlspecialchars($message['email']) ?>" class="message-email">
+                                            <i class="fas fa-envelope"></i> <?= htmlspecialchars($message['email']) ?>
+                                        </a>
+                                        <div class="message-date">
+                                            <i class="fas fa-clock"></i> <?= date('d/m/Y H:i', strtotime($message['created_at'])) ?>
+                                        </div>
+                                    </div>
+                                </div>
 
-    <!-- Message Modal -->
-    <div id="messageModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4);">
-        <div class="modal-content" style="background-color: var(--bg-primary); margin: 5% auto; padding: var(--spacing-xl); border-radius: var(--border-radius); width: 80%; max-width: 600px; box-shadow: var(--shadow-heavy);">
-            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg);">
-                <h3 id="modalTitle" style="margin: 0; color: var(--text-primary);">Message de Contact</h3>
-                <span class="close" onclick="closeModal()" style="color: var(--text-secondary); font-size: var(--font-size-2xl); font-weight: bold; cursor: pointer;">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div style="margin-bottom: var(--spacing-md);">
-                    <strong>De:</strong> <span id="modalName"></span>
+                                <div class="message-content">
+                                    <?= nl2br(htmlspecialchars($message['message'])) ?>
+                                </div>
+
+                                <div class="message-actions">
+                                    <a href="mailto:<?= htmlspecialchars($message['email']) ?>" class="btn btn-primary">
+                                        <i class="fas fa-reply"></i> <?= __('reply') ?>
+                                    </a>
+                                    <button class="btn btn-secondary" onclick="markAsRead(<?= $message['id'] ?>)">
+                                        <i class="fas fa-check"></i> <?= __('mark_as_read') ?>
+                                    </button>
+                                    <button class="btn btn-danger" onclick="deleteMessage(<?= $message['id'] ?>)">
+                                        <i class="fas fa-trash"></i> <?= __('delete') ?>
+                                    </button>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
-                <div style="margin-bottom: var(--spacing-md);">
-                    <strong>Email:</strong> <span id="modalEmail"></span>
-                </div>
-                <div style="margin-bottom: var(--spacing-md);">
-                    <strong>Message:</strong>
-                </div>
-                <div id="modalMessage" style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--border-radius-sm); white-space: pre-wrap; line-height: 1.6;"></div>
             </div>
-            <div class="modal-footer" style="margin-top: var(--spacing-lg); text-align: right;">
-                <a id="modalReply" href="#" class="btn btn-primary">
-                    <i class="fas fa-reply"></i>
-                    Répondre
-                </a>
-                <button onclick="closeModal()" class="btn btn-secondary">
-                    Fermer
-                </button>
-            </div>
+
+            <!-- Pagination -->
+            <?php if ($total_pages > 1): ?>
+                <div class="pagination">
+                    <?php if ($current_page > 1): ?>
+                        <a href="?page=<?= $current_page - 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>">
+                            <i class="fas fa-chevron-left"></i> <?= __('previous') ?>
+                        </a>
+                    <?php endif; ?>
+
+                    <?php for ($i = max(1, $current_page - 2); $i <= min($total_pages, $current_page + 2); $i++): ?>
+                        <a href="?page=<?= $i ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>"
+                            class="<?= $i === $current_page ? 'active' : '' ?>">
+                            <?= $i ?>
+                        </a>
+                    <?php endfor; ?>
+
+                    <?php if ($current_page < $total_pages): ?>
+                        <a href="?page=<?= $current_page + 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>">
+                            <?= __('next') ?> <i class="fas fa-chevron-right"></i>
+                        </a>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 
     <script>
-        // Add smooth interactions
-        document.addEventListener('DOMContentLoaded', function() {
-            // Add hover effects to table rows
-            const tableRows = document.querySelectorAll('.table tbody tr');
-            tableRows.forEach(row => {
-                row.addEventListener('mouseenter', function() {
-                    this.style.transform = 'scale(1.01)';
-                    this.style.boxShadow = 'var(--shadow-light)';
-                });
-                
-                row.addEventListener('mouseleave', function() {
-                    this.style.transform = 'scale(1)';
-                    this.style.boxShadow = 'none';
-                });
-            });
+        // Admin Language Switcher
+        function toggleAdminLanguageDropdown() {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            dropdown.classList.toggle('show');
+        }
 
-            // Add click effects to buttons
-            const buttons = document.querySelectorAll('.btn');
-            buttons.forEach(button => {
-                button.addEventListener('click', function() {
-                    this.style.transform = 'scale(0.95)';
-                    setTimeout(() => {
-                        this.style.transform = 'scale(1)';
-                    }, 150);
-                });
-            });
+        // Close admin language dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            const switcher = document.querySelector('.admin-language-switcher');
+
+            if (switcher && !switcher.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
         });
 
-        // Modal functions
-        function showMessage(name, email, message) {
-            document.getElementById('modalTitle').textContent = 'Message de ' + name;
-            document.getElementById('modalName').textContent = name;
-            document.getElementById('modalEmail').textContent = email;
-            document.getElementById('modalMessage').textContent = message;
-            document.getElementById('modalReply').href = 'mailto:' + email;
-            document.getElementById('messageModal').style.display = 'block';
+        // Message actions
+        function markAsRead(messageId) {
+            if (confirm('<?= __('confirm_mark_as_read') ?>')) {
+                // AJAX call to mark message as read
+                fetch('mark_message_read.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            id: messageId
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            alert('<?= __('error_processing_request') ?>');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('<?= __('error_processing_request') ?>');
+                    });
+            }
         }
 
-        function closeModal() {
-            document.getElementById('messageModal').style.display = 'none';
-        }
-
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            const modal = document.getElementById('messageModal');
-            if (event.target === modal) {
-                closeModal();
+        function deleteMessage(messageId) {
+            if (confirm('<?= __('confirm_delete_message') ?>')) {
+                // AJAX call to delete message
+                fetch('delete_message.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            id: messageId
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            alert('<?= __('error_processing_request') ?>');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('<?= __('error_processing_request') ?>');
+                    });
             }
         }
     </script>
 </body>
+
 </html>

@@ -6,6 +6,14 @@ $user = 'root';          // utilisateur MySQL (par défaut en local)
 $pass = '';              // mot de passe (souvent vide en local)
 $charset = 'utf8mb4';
 
+// Créer la connexion
+$conn = mysqli_connect($host, $user, $pass, $db);
+
+// Vérifier la connexion
+if (!$conn) {
+    die("Échec de connexion à la base de données : " . mysqli_connect_error());
+};
+
 // DSN PDO
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
 

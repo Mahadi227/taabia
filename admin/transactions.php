@@ -1,8 +1,15 @@
 <?php
+// Start output buffering to prevent any accidental output
+ob_start();
+
+// Handle language switching first
+require_once 'language_handler.php';
+
+// Now load the session and other includes
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/function.php';
-
+require_once '../includes/i18n.php';
 require_role('admin');
 
 // Initialize variables
@@ -100,147 +107,168 @@ try {
 ?>
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transactions | Admin | TaaBia</title>
-    
+    <title><?= __('transactions') ?> | <?= __('admin_panel') ?> | TaaBia</title>
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Admin Styles -->
     <link rel="stylesheet" href="admin-styles.css">
+    <style>
+        .transactions-table-container {
+            max-width: 100%;
+            max-height: 600px;
+            overflow-x: auto;
+            overflow-y: auto;
+        }
+
+        /* Admin Language Switcher Styles */
+        .admin-language-switcher {
+            position: relative;
+            display: inline-block;
+        }
+
+        .admin-language-dropdown {
+            position: relative;
+        }
+
+        .admin-language-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: var(--transition);
+            cursor: pointer;
+        }
+
+        .admin-language-btn:hover {
+            background: var(--gray-100);
+            border-color: var(--primary-color);
+        }
+
+        .admin-language-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-medium);
+            min-width: 160px;
+            z-index: 1000;
+            display: none;
+            overflow: hidden;
+        }
+
+        .admin-language-menu.show {
+            display: block;
+        }
+
+        .admin-language-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: var(--transition);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-language-item:last-child {
+            border-bottom: none;
+        }
+
+        .admin-language-item:hover {
+            background: var(--gray-100);
+        }
+
+        .admin-language-item.active {
+            background: var(--primary-light);
+            color: var(--primary-color);
+        }
+
+        .language-flag {
+            font-size: 1rem;
+        }
+
+        .language-name {
+            flex: 1;
+        }
+
+        .admin-language-item i {
+            color: var(--success-color);
+            font-size: 0.75rem;
+        }
+    </style>
 </head>
 
 <body>
     <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h2>TaaBia Admin</h2>
-            <p><?php
-                $current_user = null;
-                try {
-                    $stmt = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
-                    $stmt->execute([current_user_id()]);
-                    $current_user = $stmt->fetch();
-                } catch (PDOException $e) {
-                    error_log("Error fetching current user: " . $e->getMessage());
-                }
-                echo htmlspecialchars($current_user['full_name'] ?? 'Administrateur');
-            ?></p>
-        </div>
-        
-        <nav class="sidebar-nav">
-            <div class="nav-item">
-                <a href="index.php" class="nav-link">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Tableau de bord</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="users.php" class="nav-link">
-                    <i class="fas fa-users"></i>
-                    <span>Utilisateurs</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="courses.php" class="nav-link">
-                    <i class="fas fa-book"></i>
-                    <span>Formations</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="products.php" class="nav-link">
-                    <i class="fas fa-box"></i>
-                    <span>Produits</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="orders.php" class="nav-link">
-                    <i class="fas fa-shopping-cart"></i>
-                    <span>Commandes</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="events.php" class="nav-link">
-                    <i class="fas fa-calendar-alt"></i>
-                    <span>Événements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="contact_messages.php" class="nav-link">
-                    <i class="fas fa-envelope"></i>
-                    <span>Messages</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="transactions.php" class="nav-link active">
-                    <i class="fas fa-exchange-alt"></i>
-                    <span>Transactions</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payout_requests.php" class="nav-link">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <span>Demandes de paiement</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="earnings.php" class="nav-link">
-                    <i class="fas fa-wallet"></i>
-                    <span>Revenus</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payments.php" class="nav-link">
-                    <i class="fas fa-money-bill-wave"></i>
-                    <span>Paiements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payment_stats.php" class="nav-link">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Statistiques</span>
-                </a>
-            </div>
-            
-            <div class="nav-item" style="margin-top: 2rem;">
-                <a href="../auth/logout.php" class="nav-link">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </nav>
-    </div>
+    <?php include 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->
     <div class="main-content">
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1 class="page-title">Gestion des Transactions</h1>
-                
-                <div class="header-actions">
-                    <div class="user-menu">
-                        <div class="user-avatar">
-                            <i class="fas fa-user"></i>
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div class="page-title">
+                        <h1><i class="fas fa-exchange-alt"></i> <?= __('transactions') ?></h1>
+                        <p><?= __('manage_transactions') ?></p>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 20px;">
+                        <!-- Language Switcher -->
+                        <div class="admin-language-switcher">
+                            <div class="admin-language-dropdown">
+                                <button class="admin-language-btn" onclick="toggleAdminLanguageDropdown()">
+                                    <i class="fas fa-globe"></i>
+                                    <span><?= getCurrentLanguage() == 'fr' ? 'Français' : 'English' ?></span>
+                                    <i class="fas fa-chevron-down"></i>
+                                </button>
+
+                                <div class="admin-language-menu" id="adminLanguageDropdown">
+                                    <a href="?lang=fr" class="admin-language-item <?= getCurrentLanguage() == 'fr' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇫🇷</span>
+                                        <span class="language-name">Français</span>
+                                        <?php if (getCurrentLanguage() == 'fr'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                    <a href="?lang=en" class="admin-language-item <?= getCurrentLanguage() == 'en' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇬🇧</span>
+                                        <span class="language-name">English</span>
+                                        <?php if (getCurrentLanguage() == 'en'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div style="font-weight: 600; font-size: 0.875rem;">Administrateur</div>
-                            <div style="font-size: 0.75rem; opacity: 0.7;">Admin Panel</div>
+
+                        <!-- User Menu -->
+                        <div class="user-menu">
+                            <div class="user-avatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.875rem;"><?= htmlspecialchars($current_user['full_name'] ?? __('administrator')) ?></div>
+                                <div style="font-size: 0.75rem; opacity: 0.7;"><?= __('admin_panel') ?></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -253,53 +281,56 @@ try {
             <div class="search-filters">
                 <form method="GET" class="filters-row">
                     <div class="filter-group">
-                        <label class="form-label">Rechercher</label>
-                        <input type="text" name="search" class="form-control" 
-                               placeholder="Utilisateur, email, référence..." 
-                               value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                        <label class="form-label"><?= __('search') ?></label>
+                        <input type="text" name="search" class="form-control"
+                            placeholder="<?= __('search_transaction_placeholder') ?>"
+                            value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
                     </div>
-                    
+
                     <div class="filter-group">
-                        <label class="form-label">Statut</label>
+                        <label class="form-label"><?= __('status') ?></label>
                         <select name="status" class="form-control">
-                            <option value="">Tous les statuts</option>
-                            <option value="success" <?= ($_GET['status'] ?? '') === 'success' ? 'selected' : '' ?>>Réussi</option>
-                            <option value="pending" <?= ($_GET['status'] ?? '') === 'pending' ? 'selected' : '' ?>>En attente</option>
-                            <option value="failed" <?= ($_GET['status'] ?? '') === 'failed' ? 'selected' : '' ?>>Échoué</option>
+                            <option value=""><?= __('all_statuses') ?></option>
+                            <option value="success" <?= ($_GET['status'] ?? '') === 'success' ? 'selected' : '' ?>>
+                                <?= __('success') ?></option>
+                            <option value="pending" <?= ($_GET['status'] ?? '') === 'pending' ? 'selected' : '' ?>><?= __('pending') ?></option>
+                            <option value="failed" <?= ($_GET['status'] ?? '') === 'failed' ? 'selected' : '' ?>><?= __('failed') ?></option>
                         </select>
                     </div>
-                    
+
                     <div class="filter-group">
-                        <label class="form-label">Méthode</label>
+                        <label class="form-label"><?= __('payment_method') ?></label>
                         <select name="method" class="form-control">
-                            <option value="">Toutes les méthodes</option>
-                            <option value="card" <?= ($_GET['method'] ?? '') === 'card' ? 'selected' : '' ?>>Carte</option>
-                            <option value="bank_transfer" <?= ($_GET['method'] ?? '') === 'bank_transfer' ? 'selected' : '' ?>>Virement</option>
-                            <option value="mobile_money" <?= ($_GET['method'] ?? '') === 'mobile_money' ? 'selected' : '' ?>>Mobile Money</option>
+                            <option value=""><?= __('all_methods') ?></option>
+                            <option value="card" <?= ($_GET['method'] ?? '') === 'card' ? 'selected' : '' ?>><?= __('card') ?></option>
+                            <option value="bank_transfer"
+                                <?= ($_GET['method'] ?? '') === 'bank_transfer' ? 'selected' : '' ?>><?= __('bank_transfer') ?></option>
+                            <option value="mobile_money"
+                                <?= ($_GET['method'] ?? '') === 'mobile_money' ? 'selected' : '' ?>><?= __('mobile_money') ?></option>
                         </select>
                     </div>
-                    
+
                     <div class="filter-group">
-                        <label class="form-label">Date de début</label>
-                        <input type="date" name="date_from" class="form-control" 
-                               value="<?= htmlspecialchars($_GET['date_from'] ?? '') ?>">
+                        <label class="form-label"><?= __('date_from') ?></label>
+                        <input type="date" name="date_from" class="form-control"
+                            value="<?= htmlspecialchars($_GET['date_from'] ?? '') ?>">
                     </div>
-                    
+
                     <div class="filter-group">
-                        <label class="form-label">Date de fin</label>
-                        <input type="date" name="date_to" class="form-control" 
-                               value="<?= htmlspecialchars($_GET['date_to'] ?? '') ?>">
+                        <label class="form-label"><?= __('date_to') ?></label>
+                        <input type="date" name="date_to" class="form-control"
+                            value="<?= htmlspecialchars($_GET['date_to'] ?? '') ?>">
                     </div>
-                    
+
                     <div class="filter-group">
                         <label class="form-label">&nbsp;</label>
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-search"></i>
-                            Filtrer
+                            <?= __('filter') ?>
                         </button>
                         <a href="transactions.php" class="btn btn-secondary">
                             <i class="fas fa-times"></i>
-                            Réinitialiser
+                            <?= __('reset') ?>
                         </a>
                     </div>
                 </form>
@@ -314,11 +345,11 @@ try {
                         </div>
                         <div class="stat-info">
                             <div class="stat-value"><?= number_format($total_transactions) ?></div>
-                            <div class="stat-label">Total Transactions</div>
+                            <div class="stat-label"><?= __('total_transactions') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon success">
@@ -326,11 +357,11 @@ try {
                         </div>
                         <div class="stat-info">
                             <div class="stat-value">GHS<?= number_format($total_amount, 2) ?></div>
-                            <div class="stat-label">Montant Total</div>
+                            <div class="stat-label"><?= __('total_amount') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon students">
@@ -342,7 +373,7 @@ try {
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon users">
@@ -364,119 +395,124 @@ try {
                         <span class="badge badge-primary"><?= $total_transactions ?> transactions</span>
                     </div>
                 </div>
-                
+
                 <div class="table-container">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>ID Transaction</th>
-                                <th>Utilisateur</th>
-                                <th>Montant</th>
-                                <th>Méthode</th>
-                                <th>Statut</th>
-                                <th>Référence</th>
-                                <th>Date</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($transactions)): ?>
+                    <div class="transactions-table-container">
+                        <table class="table">
+                            <thead>
                                 <tr>
-                                    <td colspan="8" class="text-center" style="padding: 3rem;">
-                                        <i class="fas fa-exchange-alt" style="font-size: 3rem; color: var(--text-light); margin-bottom: 1rem; display: block;"></i>
-                                        <p>Aucune transaction trouvée</p>
-                                    </td>
+                                    <th><?= __('transaction_id') ?></th>
+                                    <th><?= __('user') ?></th>
+                                    <th><?= __('amount') ?></th>
+                                    <th><?= __('payment_method') ?></th>
+                                    <th><?= __('status') ?></th>
+                                    <th><?= __('reference') ?></th>
+                                    <th><?= __('date') ?></th>
+                                    <th><?= __('actions') ?></th>
                                 </tr>
-                            <?php else: ?>
-                                <?php foreach ($transactions as $tx): ?>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($transactions)): ?>
                                     <tr>
-                                        <td>
-                                            <div style="font-weight: 600; color: var(--primary-color);">
-                                                #<?= $tx['id'] ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div style="font-weight: 500;"><?= htmlspecialchars($tx['full_name'] ?? 'Utilisateur #' . $tx['user_id']) ?></div>
-                                            <div style="font-size: 0.875rem; color: var(--text-secondary);">
-                                                <?= htmlspecialchars($tx['email'] ?? 'N/A') ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div style="font-weight: 600; color: var(--success-color);">
-                                                <?= number_format($tx['amount'], 2) ?> <?= htmlspecialchars($tx['currency'] ?? 'USD') ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div style="font-weight: 500; text-transform: capitalize;">
-                                                <?= htmlspecialchars($tx['payment_method']) ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <?php
-                                            $status_labels = [
-                                                'success' => ['Réussi', 'badge-success'],
-                                                'pending' => ['En attente', 'badge-warning'],
-                                                'failed' => ['Échoué', 'badge-danger']
-                                            ];
-                                            $status_info = $status_labels[$tx['payment_status']] ?? ['Inconnu', 'badge-secondary'];
-                                            ?>
-                                            <span class="badge <?= $status_info[1] ?>"><?= $status_info[0] ?></span>
-                                        </td>
-                                        <td>
-                                            <div style="font-size: 0.875rem; color: var(--text-secondary); font-family: monospace;">
-                                                <?= htmlspecialchars($tx['reference']) ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div style="font-size: 0.875rem; color: var(--text-secondary);">
-                                                <?= date('d/m/Y', strtotime($tx['created_at'])) ?>
-                                            </div>
-                                            <div style="font-size: 0.75rem; color: var(--text-light);">
-                                                <?= date('H:i', strtotime($tx['created_at'])) ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="d-flex gap-1">
-                                                <a href="edit_transaction.php?id=<?= $tx['id'] ?>" 
-                                                   class="btn btn-sm btn-warning" 
-                                                   title="Modifier">
-                                                    <i class="fas fa-edit"></i>
-                                                </a>
-                                                <a href="delete_transaction.php?id=<?= $tx['id'] ?>" 
-                                                   class="btn btn-sm btn-danger" 
-                                                   title="Supprimer"
-                                                   onclick="return confirm('Êtes-vous sûr de vouloir supprimer cette transaction ?')">
-                                                    <i class="fas fa-trash"></i>
-                                                </a>
-                                            </div>
+                                        <td colspan="8" class="text-center" style="padding: 3rem;">
+                                            <i class="fas fa-exchange-alt"
+                                                style="font-size: 3rem; color: var(--text-light); margin-bottom: 1rem; display: block;"></i>
+                                            <p><?= __('no_transactions_found') ?></p>
                                         </td>
                                     </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
+                                <?php else: ?>
+                                    <?php foreach ($transactions as $tx): ?>
+                                        <tr>
+                                            <td>
+                                                <div style="font-weight: 600; color: var(--primary-color);">
+                                                    #<?= $tx['id'] ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div style="font-weight: 500;">
+                                                    <?= htmlspecialchars($tx['full_name'] ?? 'Utilisateur #' . $tx['user_id']) ?>
+                                                </div>
+                                                <div style="font-size: 0.875rem; color: var(--text-secondary);">
+                                                    <?= htmlspecialchars($tx['email'] ?? 'N/A') ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div style="font-weight: 600; color: var(--success-color);">
+                                                    <?= number_format($tx['amount'], 2) ?>
+                                                    <?= htmlspecialchars($tx['currency'] ?? 'USD') ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div style="font-weight: 500; text-transform: capitalize;">
+                                                    <?= htmlspecialchars($tx['payment_method']) ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <?php
+                                                $status_labels = [
+                                                    'success' => [__('success'), 'badge-success'],
+                                                    'pending' => [__('pending'), 'badge-warning'],
+                                                    'failed' => [__('failed'), 'badge-danger']
+                                                ];
+                                                $status_info = $status_labels[$tx['payment_status']] ?? [__('unknown'), 'badge-secondary'];
+                                                ?>
+                                                <span class="badge <?= $status_info[1] ?>"><?= $status_info[0] ?></span>
+                                            </td>
+                                            <td>
+                                                <div
+                                                    style="font-size: 0.875rem; color: var(--text-secondary); font-family: monospace;">
+                                                    <?= htmlspecialchars($tx['reference']) ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div style="font-size: 0.875rem; color: var(--text-secondary);">
+                                                    <?= date('d/m/Y', strtotime($tx['created_at'])) ?>
+                                                </div>
+                                                <div style="font-size: 0.75rem; color: var(--text-light);">
+                                                    <?= date('H:i', strtotime($tx['created_at'])) ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex gap-1">
+                                                    <a href="edit_transaction.php?id=<?= $tx['id'] ?>"
+                                                        class="btn btn-sm btn-warning" title="Modifier">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
+                                                    <a href="delete_transaction.php?id=<?= $tx['id'] ?>"
+                                                        class="btn btn-sm btn-danger" title="Supprimer"
+                                                        onclick="return confirm('Êtes-vous sûr de vouloir supprimer cette transaction ?')">
+                                                        <i class="fas fa-trash"></i>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <!-- Pagination -->
                 <?php if ($total_pages > 1): ?>
                     <div class="pagination">
                         <?php if ($current_page > 1): ?>
-                            <a href="?page=<?= $current_page - 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&method=<?= htmlspecialchars($_GET['method'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" 
-                               class="btn btn-secondary">
+                            <a href="?page=<?= $current_page - 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&method=<?= htmlspecialchars($_GET['method'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>"
+                                class="btn btn-secondary">
                                 <i class="fas fa-chevron-left"></i>
                             </a>
                         <?php endif; ?>
-                        
+
                         <?php for ($i = max(1, $current_page - 2); $i <= min($total_pages, $current_page + 2); $i++): ?>
-                            <a href="?page=<?= $i ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&method=<?= htmlspecialchars($_GET['method'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" 
-                               class="btn <?= $i === $current_page ? 'btn-primary active' : 'btn-secondary' ?>">
+                            <a href="?page=<?= $i ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&method=<?= htmlspecialchars($_GET['method'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>"
+                                class="btn <?= $i === $current_page ? 'btn-primary active' : 'btn-secondary' ?>">
                                 <?= $i ?>
                             </a>
                         <?php endfor; ?>
-                        
+
                         <?php if ($current_page < $total_pages): ?>
-                            <a href="?page=<?= $current_page + 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&method=<?= htmlspecialchars($_GET['method'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" 
-                               class="btn btn-secondary">
+                            <a href="?page=<?= $current_page + 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&method=<?= htmlspecialchars($_GET['method'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>"
+                                class="btn btn-secondary">
                                 <i class="fas fa-chevron-right"></i>
                             </a>
                         <?php endif; ?>
@@ -496,7 +532,7 @@ try {
                     this.style.transform = 'scale(1.01)';
                     this.style.boxShadow = 'var(--shadow-light)';
                 });
-                
+
                 row.addEventListener('mouseleave', function() {
                     this.style.transform = 'scale(1)';
                     this.style.boxShadow = 'none';
@@ -514,6 +550,23 @@ try {
                 });
             });
         });
+
+        // Admin Language Switcher
+        function toggleAdminLanguageDropdown() {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            const button = document.querySelector('.admin-language-btn');
+
+            if (!button.contains(event.target) && !dropdown.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
     </script>
 </body>
+
 </html>

@@ -555,7 +555,13 @@ try {
                         </div>
                     </div>
                     
-                    <div class="course-price"><?= number_format($course['price'], 0, ',', ' ') ?> FCFA</div>
+                    <div class="course-price">
+                        <?php if ((float)($course['price'] ?? 0) <= 0): ?>
+                            Gratuit
+                        <?php else: ?>
+                            <?= number_format($course['price'], 0, ',', ' ') ?> GHS
+                        <?php endif; ?>
+                    </div>
                     
                     <p class="course-description">
                         <?= nl2br(htmlspecialchars($course['description'])) ?>
@@ -594,8 +600,12 @@ try {
                     </h3>
                     
                     <div class="enrollment-price">
-                        <div class="price-amount"><?= number_format($course['price'], 0, ',', ' ') ?></div>
-                        <div class="price-currency">FCFA</div>
+                        <?php if ((float)($course['price'] ?? 0) <= 0): ?>
+                            <div class="price-amount">Gratuit</div>
+                        <?php else: ?>
+                            <div class="price-amount"><?= number_format($course['price'], 0, ',', ' ') ?></div>
+                            <div class="price-currency">GHS</div>
+                        <?php endif; ?>
                     </div>
                     
                     <div class="enrollment-features">
@@ -617,15 +627,21 @@ try {
                         </div>
                     </div>
                     
-                    <?php if (isset($_SESSION['user_id'])): ?>
-                        <a href="../student/enroll.php?course_id=<?= $course['id'] ?>" class="btn btn-primary" style="width: 100%; justify-content: center;">
-                            <i class="fas fa-graduation-cap"></i> S'inscrire maintenant
-                        </a>
-                    <?php else: ?>
-                        <a href="../auth/login.php" class="btn btn-primary" style="width: 100%; justify-content: center;">
-                            <i class="fas fa-sign-in-alt"></i> Se connecter pour s'inscrire
-                        </a>
-                    <?php endif; ?>
+                    <div class="enrollment-actions">
+                        <button onclick="addCourseToCart(<?= $course['id'] ?>)" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: var(--spacing-sm);">
+                            <i class="fas fa-cart-plus"></i> Ajouter au panier
+                        </button>
+                        
+                        <?php if (isset($_SESSION['user_id'])): ?>
+                            <a href="../student/enroll.php?course_id=<?= $course['id'] ?>" class="btn btn-secondary" style="width: 100%; justify-content: center;">
+                                <i class="fas fa-graduation-cap"></i> S'inscrire directement
+                            </a>
+                        <?php else: ?>
+                            <a href="../auth/login.php" class="btn btn-secondary" style="width: 100%; justify-content: center;">
+                                <i class="fas fa-sign-in-alt"></i> Se connecter pour s'inscrire
+                            </a>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
@@ -715,5 +731,73 @@ try {
             }
         }
     </style>
+
+    <script>
+        // Add course to cart functionality
+        function addCourseToCart(courseId) {
+            fetch('add_course_to_cart.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'course_id=' + courseId
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('Cours ajouté au panier avec succès !', 'success');
+                    updateCartCount(data.cart_count);
+                } else {
+                    showNotification(data.message || 'Erreur lors de l\'ajout au panier', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('Erreur de connexion', 'error');
+            });
+        }
+
+        // Show notification
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.innerHTML = `
+                <div style="position: fixed; top: 20px; right: 20px; z-index: 1000; padding: 15px 20px; border-radius: 8px; color: white; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-width: 300px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                        <span>${message}</span>
+                    </div>
+                </div>
+            `;
+            
+            // Style based on type
+            const notificationDiv = notification.querySelector('div');
+            if (type === 'success') {
+                notificationDiv.style.background = '#4caf50';
+            } else if (type === 'error') {
+                notificationDiv.style.background = '#f44336';
+            } else {
+                notificationDiv.style.background = '#009688';
+            }
+            
+            document.body.appendChild(notification);
+            
+            // Auto remove after 3 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 3000);
+        }
+
+        // Update cart count
+        function updateCartCount(count) {
+            const cartBadge = document.querySelector('.cart-count');
+            if (cartBadge) {
+                cartBadge.textContent = count;
+                cartBadge.style.display = count > 0 ? 'block' : 'none';
+            }
+        }
+    </script>
 </body>
 </html>

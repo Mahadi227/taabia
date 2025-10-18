@@ -1,0 +1,448 @@
+/**
+ * Instructor Sidebar Navigation Styles
+ * 
+ * Modern, responsive sidebar styles for the instructor dashboard
+ * with smooth animations and professional design.
+ */
+
+/* ======================================================================== */
+/* CSS VARIABLES */
+/* ======================================================================== */
+:root {
+    --sidebar-width: 280px;
+    --sidebar-collapsed-width: 70px;
+    --sidebar-bg: #1d4ed8;
+    --sidebar-bg-hover: #1e40af;
+    --sidebar-text: #e2e8f0;
+    --sidebar-text-hover: #ffffff;
+    --sidebar-accent: #3b82f6;
+    --sidebar-accent-hover: #2563eb;
+    --sidebar-border: #1e40af;
+    --sidebar-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --sidebar-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --sidebar-z-index: 1000;
+}
+
+/* ======================================================================== */
+/* SIDEBAR CONTAINER */
+/* ======================================================================== */
+.instructor-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--sidebar-width);
+    height: 100vh;
+    background: linear-gradient(180deg, var(--sidebar-bg) 0%, #1e40af 100%);
+    color: var(--sidebar-text);
+    z-index: var(--sidebar-z-index);
+    transition: var(--sidebar-transition);
+    box-shadow: var(--sidebar-shadow);
+    border-right: 1px solid var(--sidebar-border);
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.instructor-sidebar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.instructor-sidebar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.instructor-sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+}
+
+.instructor-sidebar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* ======================================================================== */
+/* SIDEBAR HEADER */
+/* ======================================================================== */
+.instructor-sidebar-header {
+    padding: 2rem 1.5rem 1.5rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    background: rgba(0, 0, 0, 0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+.instructor-sidebar-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%);
+    z-index: -1;
+}
+
+.instructor-sidebar-header h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text-hover);
+    margin: 0 0 0.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: var(--sidebar-transition);
+}
+
+.instructor-sidebar-header h2 i {
+    color: var(--sidebar-accent);
+    font-size: 1.75rem;
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));
+}
+
+.instructor-sidebar-header p {
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    margin: 0;
+    opacity: 0.8;
+    font-weight: 500;
+}
+
+/* ======================================================================== */
+/* NAVIGATION */
+/* ======================================================================== */
+.instructor-nav {
+    padding: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.instructor-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.875rem 1.5rem;
+    color: var(--sidebar-text);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: var(--sidebar-transition);
+    position: relative;
+    border-radius: 0;
+    margin: 0 0.75rem;
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.instructor-nav-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    background: linear-gradient(90deg, var(--sidebar-accent), var(--sidebar-accent-hover));
+    transition: var(--sidebar-transition);
+    z-index: -1;
+}
+
+.instructor-nav-item:hover {
+    color: var(--sidebar-text-hover);
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(4px);
+}
+
+.instructor-nav-item:hover::before {
+    width: 4px;
+}
+
+.instructor-nav-item.active {
+    color: var(--sidebar-text-hover);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(147, 51, 234, 0.2) 100%);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.instructor-nav-item.active::before {
+    width: 4px;
+    background: var(--sidebar-accent);
+}
+
+.instructor-nav-item i {
+    font-size: 1.125rem;
+    width: 1.25rem;
+    text-align: center;
+    color: var(--sidebar-accent);
+    transition: var(--sidebar-transition);
+}
+
+.instructor-nav-item:hover i,
+.instructor-nav-item.active i {
+    color: var(--sidebar-text-hover);
+    transform: scale(1.1);
+}
+
+/* ======================================================================== */
+/* MOBILE OVERLAY */
+/* ======================================================================== */
+.mobile-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: var(--sidebar-transition);
+    backdrop-filter: blur(4px);
+}
+
+.mobile-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* ======================================================================== */
+/* HAMBURGER MENU BUTTON */
+/* ======================================================================== */
+.hamburger-menu-btn {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    z-index: 1001;
+    background: var(--sidebar-bg);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    cursor: pointer;
+    display: none;
+    flex-direction: column;
+    gap: 0.25rem;
+    transition: var(--sidebar-transition);
+    box-shadow: var(--sidebar-shadow);
+}
+
+.hamburger-menu-btn:hover {
+    background: var(--sidebar-bg-hover);
+    transform: scale(1.05);
+}
+
+.hamburger-line {
+    width: 1.5rem;
+    height: 2px;
+    background: var(--sidebar-text);
+    border-radius: 1px;
+    transition: var(--sidebar-transition);
+}
+
+.hamburger-menu-btn.active .hamburger-line:nth-child(1) {
+    transform: rotate(45deg) translate(5px, 5px);
+}
+
+.hamburger-menu-btn.active .hamburger-line:nth-child(2) {
+    opacity: 0;
+}
+
+.hamburger-menu-btn.active .hamburger-line:nth-child(3) {
+    transform: rotate(-45deg) translate(7px, -6px);
+}
+
+/* ======================================================================== */
+/* RESPONSIVE DESIGN */
+/* ======================================================================== */
+@media (max-width: 1024px) {
+    .instructor-sidebar {
+        transform: translateX(-100%);
+    }
+    
+    .instructor-sidebar.mobile-visible {
+        transform: translateX(0);
+    }
+    
+    .hamburger-menu-btn {
+        display: flex;
+    }
+    
+    .main-content {
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 768px) {
+    :root {
+        --sidebar-width: 100%;
+    }
+    
+    .instructor-sidebar {
+        width: 100%;
+        max-width: 320px;
+    }
+    
+    .instructor-sidebar-header {
+        padding: 1.5rem 1rem 1rem;
+    }
+    
+    .instructor-sidebar-header h2 {
+        font-size: 1.25rem;
+    }
+    
+    .instructor-nav-item {
+        padding: 1rem 1rem;
+        margin: 0 0.5rem;
+        font-size: 1rem;
+    }
+    
+    .hamburger-menu-btn {
+        top: 0.75rem;
+        left: 0.75rem;
+        padding: 0.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .instructor-sidebar-header {
+        padding: 1rem 0.75rem 0.75rem;
+    }
+    
+    .instructor-sidebar-header h2 {
+        font-size: 1.125rem;
+        gap: 0.5rem;
+    }
+    
+    .instructor-sidebar-header h2 i {
+        font-size: 1.5rem;
+    }
+    
+    .instructor-nav-item {
+        padding: 0.875rem 0.75rem;
+        margin: 0 0.25rem;
+        gap: 0.75rem;
+    }
+    
+    .instructor-nav-item i {
+        font-size: 1rem;
+    }
+}
+
+/* ======================================================================== */
+/* BODY STATES */
+/* ======================================================================== */
+body.sidebar-open {
+    overflow: hidden;
+}
+
+body.sidebar-open .main-content {
+    filter: blur(2px);
+    pointer-events: none;
+}
+
+/* ======================================================================== */
+/* ANIMATIONS */
+/* ======================================================================== */
+@keyframes slideInLeft {
+    from {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutLeft {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+}
+
+.instructor-sidebar.mobile-visible {
+    animation: slideInLeft 0.3s ease-out;
+}
+
+.instructor-sidebar:not(.mobile-visible) {
+    animation: slideOutLeft 0.3s ease-out;
+}
+
+/* ======================================================================== */
+/* FOCUS STATES FOR ACCESSIBILITY */
+/* ======================================================================== */
+.instructor-nav-item:focus {
+    outline: 2px solid var(--sidebar-accent);
+    outline-offset: 2px;
+}
+
+.hamburger-menu-btn:focus {
+    outline: 2px solid var(--sidebar-accent);
+    outline-offset: 2px;
+}
+
+/* ======================================================================== */
+/* DARK MODE SUPPORT */
+/* ======================================================================== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --sidebar-bg: #1d4ed8;
+        --sidebar-bg-hover: #1e40af;
+        --sidebar-text: #cbd5e1;
+        --sidebar-text-hover: #f1f5f9;
+        --sidebar-border: #1e40af;
+    }
+}
+
+/* ======================================================================== */
+/* HIGH CONTRAST MODE */
+/* ======================================================================== */
+@media (prefers-contrast: high) {
+    .instructor-sidebar {
+        border-right: 2px solid var(--sidebar-border);
+    }
+    
+    .instructor-nav-item {
+        border: 1px solid transparent;
+    }
+    
+    .instructor-nav-item:hover,
+    .instructor-nav-item.active {
+        border-color: var(--sidebar-accent);
+    }
+}
+
+/* ======================================================================== */
+/* REDUCED MOTION */
+/* ======================================================================== */
+@media (prefers-reduced-motion: reduce) {
+    .instructor-sidebar,
+    .instructor-nav-item,
+    .mobile-overlay,
+    .hamburger-menu-btn,
+    .hamburger-line {
+        transition: none;
+    }
+    
+    .instructor-sidebar.mobile-visible,
+    .instructor-sidebar:not(.mobile-visible) {
+        animation: none;
+    }
+}
+
+/* ======================================================================== */
+/* PRINT STYLES */
+/* ======================================================================== */
+@media print {
+    .instructor-sidebar,
+    .mobile-overlay,
+    .hamburger-menu-btn {
+        display: none !important;
+    }
+    
+    .main-content {
+        margin-left: 0 !important;
+    }
+}

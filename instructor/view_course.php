@@ -105,7 +105,12 @@ $contents = $content_stmt->fetchAll();
         <h1><?= htmlspecialchars($course['title']) ?></h1>
         <p><?= nl2br(htmlspecialchars($course['description'])) ?></p>
         <p><strong>Statut :</strong> <?= htmlspecialchars($course['status']) ?> | 
-           <strong>Prix :</strong> <?= $course['price'] ?> FCFA</p>
+           <strong>Prix :</strong> 
+           <?php if ((float)($course['price'] ?? 0) <= 0): ?>
+               Gratuit
+           <?php else: ?>
+               <?= number_format($course['price'], 0, ',', ' ') ?> FCFA
+           <?php endif; ?></p>
         <a href="upload_content.php?course_id=<?= $course['id'] ?>" class="btn">➕ Ajouter du contenu</a>
     </div>
 

@@ -1,29 +1,65 @@
 <?php
+require_once '../../includes/i18n.php';
 require_once '../../includes/db.php';
 
-$product_id = $_GET['id'] ?? null;
+// Get product ID
+$product_id = intval($_GET['id'] ?? 0);
 
 if (!$product_id) {
     header('Location: shop.php');
     exit;
 }
 
+// Get product details
 try {
-    // Get product details with vendor information
-    $stmt = $pdo->prepare("
-        SELECT p.*, u.full_name AS vendor_name 
+    $query = "
+        SELECT p.*, u.fullname AS vendor_name 
         FROM products p 
         LEFT JOIN users u ON p.vendor_id = u.id 
         WHERE p.id = ? AND p.status = 'active'
-    ");
+    ";
+    
+    $stmt = $pdo->prepare($query);
     $stmt->execute([$product_id]);
     $product = $stmt->fetch();
-
+    
     if (!$product) {
         header('Location: shop.php');
         exit;
     }
-
+    
+    // Get related products
+    $related_query = "
+        SELECT p.*, u.fullname AS vendor_name
+        FROM products p 
+        LEFT JOIN users u ON p.vendor_id = u.id 
+        WHERE p.status = 'active' 
+        AND p.id != ? 
+        AND p.category = ?
+        ORDER BY p.created_at DESC
+        LIMIT 4
+    ";
+    
+    $related_stmt = $pdo->prepare($related_query);
+    $related_stmt->execute([$product_id, $product['category']]);
+    $related_products = $related_stmt->fetchAll();
+    
+    // Get vendor's other products
+    $vendor_products_query = "
+        SELECT p.*, u.fullname AS vendor_name
+        FROM products p 
+        LEFT JOIN users u ON p.vendor_id = u.id 
+        WHERE p.status = 'active' 
+        AND p.id != ? 
+        AND p.vendor_id = ?
+        ORDER BY p.created_at DESC
+        LIMIT 4
+    ";
+    
+    $vendor_products_stmt = $pdo->prepare($vendor_products_query);
+    $vendor_products_stmt->execute([$product_id, $product['vendor_id']]);
+    $vendor_products = $vendor_products_stmt->fetchAll();
+    
 } catch (PDOException $e) {
     header('Location: shop.php');
     exit;
@@ -164,6 +200,22 @@ try {
             color: var(--text-white);
         }
 
+        .btn-success {
+            background: var(--success-color);
+            color: var(--text-white);
+        }
+
+        .btn-success:hover {
+            background: #388e3c;
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-medium);
+        }
+
+        .btn-lg {
+            padding: var(--spacing-md) var(--spacing-xl);
+            font-size: 1rem;
+        }
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
@@ -174,52 +226,56 @@ try {
             padding: var(--spacing-2xl) 0;
         }
 
-        .product-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: var(--spacing-2xl);
-            margin-top: var(--spacing-xl);
+        .product-hero {
+            background: var(--bg-primary);
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            box-shadow: var(--shadow-light);
+            margin-bottom: var(--spacing-2xl);
         }
 
         .product-image {
-            background: var(--bg-primary);
-            padding: var(--spacing-xl);
-            border-radius: var(--border-radius);
-            box-shadow: var(--shadow-light);
-            text-align: center;
+            width: 100%;
+            height: 400px;
+            object-fit: cover;
         }
 
-        .product-image img {
-            max-width: 100%;
-            height: auto;
-            border-radius: var(--border-radius-sm);
+        .product-image-placeholder {
+            width: 100%;
+            height: 400px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 4rem;
         }
 
-        .product-details {
-            background: var(--bg-primary);
-            padding: var(--spacing-xl);
-            border-radius: var(--border-radius);
-            box-shadow: var(--shadow-light);
+        .product-content {
+            padding: var(--spacing-2xl);
+        }
+
+        .product-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: var(--spacing-xl);
+            flex-wrap: wrap;
+            gap: var(--spacing-lg);
         }
 
         .product-title {
-            font-size: 1.5rem;
+            font-size: 2.5rem;
+            font-weight: 700;
             color: var(--text-primary);
             margin-bottom: var(--spacing-md);
         }
 
-        .product-price {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--success-color);
-            margin-bottom: var(--spacing-lg);
-        }
-
         .product-meta {
             display: flex;
-            gap: var(--spacing-lg);
-            margin-bottom: var(--spacing-lg);
             flex-wrap: wrap;
+            gap: var(--spacing-lg);
+            margin-bottom: var(--spacing-xl);
         }
 
         .meta-item {
@@ -227,71 +283,144 @@ try {
             align-items: center;
             gap: var(--spacing-sm);
             color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .meta-item i {
+            color: var(--primary-color);
+            width: 16px;
         }
 
         .product-description {
-            color: var(--text-secondary);
+            color: var(--text-primary);
             line-height: 1.8;
             margin-bottom: var(--spacing-xl);
+            font-size: 1.1rem;
         }
 
-        .product-features {
-            margin-bottom: var(--spacing-xl);
-        }
-
-        .feature-item {
-            display: flex;
-            align-items: center;
-            margin-bottom: var(--spacing-md);
-        }
-
-        .feature-item i {
-            color: var(--success-color);
-            margin-right: var(--spacing-sm);
-        }
-
-        .quantity-selector {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-md);
-            margin-bottom: var(--spacing-lg);
-        }
-
-        .quantity-btn {
-            width: 40px;
-            height: 40px;
-            border: 1px solid var(--border-color);
-            background: var(--bg-primary);
-            border-radius: var(--border-radius-sm);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: var(--transition);
-        }
-
-        .quantity-btn:hover {
-            background: var(--bg-secondary);
-        }
-
-        .quantity-input {
-            width: 60px;
-            height: 40px;
-            text-align: center;
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius-sm);
-            font-size: 1rem;
-        }
-
-        .action-buttons {
+        .product-actions {
             display: flex;
             gap: var(--spacing-md);
             flex-wrap: wrap;
         }
 
-        .btn-large {
-            padding: var(--spacing-md) var(--spacing-xl);
-            font-size: 1rem;
+        .product-details {
+            background: var(--bg-primary);
+            border-radius: var(--border-radius);
+            padding: var(--spacing-xl);
+            box-shadow: var(--shadow-light);
+            margin-bottom: var(--spacing-2xl);
+        }
+
+        .details-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-lg);
+        }
+
+        .details-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .product-price {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .product-stock {
+            background: var(--success-color);
+            color: white;
+            padding: var(--spacing-sm) var(--spacing-md);
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .product-stock.out-of-stock {
+            background: var(--danger-color);
+        }
+
+        .related-products {
+            background: var(--bg-primary);
+            border-radius: var(--border-radius);
+            padding: var(--spacing-xl);
+            box-shadow: var(--shadow-light);
+        }
+
+        .related-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--spacing-lg);
+        }
+
+        .related-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: var(--spacing-lg);
+        }
+
+        .related-product {
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-sm);
+            padding: var(--spacing-lg);
+            transition: var(--transition);
+        }
+
+        .related-product:hover {
+            border-color: var(--primary-color);
+            box-shadow: var(--shadow-light);
+        }
+
+        .related-product-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .related-product-price {
+            color: var(--primary-color);
+            font-weight: 500;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .related-product-vendor {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            margin-bottom: var(--spacing-md);
+        }
+
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-xl);
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .breadcrumb a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        .status-badge {
+            background: var(--success-color);
+            color: white;
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--border-radius-sm);
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
         }
 
         @media (max-width: 768px) {
@@ -311,35 +440,34 @@ try {
                 width: 100%;
             }
             
-            .product-content {
-                grid-template-columns: 1fr;
+            .product-header {
+                flex-direction: column;
+                align-items: flex-start;
             }
             
-            .product-meta {
-                flex-direction: column;
-                gap: var(--spacing-sm);
+            .product-title {
+                font-size: 2rem;
             }
             
-            .action-buttons {
-                flex-direction: column;
+            .product-actions {
+                width: 100%;
+            }
+            
+            .product-actions .btn {
+                flex: 1;
             }
         }
     </style>
 </head>
 <body>
- <!-- Header -->
- <header class="header">
+    <!-- Header -->
+    <header class="header">
         <nav class="navbar">
             <a href="index.php" class="logo">
                 <i class="fas fa-graduation-cap"></i> TaaBia
             </a>
             
-            <button class="hamburger" id="hamburger">
-                <span></span>
-                <span></span>
-                <span></span>
-            </button>
-            <ul class="nav-menu" id="nav-menu">
+            <ul class="nav-menu">
                 <li><a href="index.php" class="nav-link">Accueil</a></li>
                 <li><a href="courses.php" class="nav-link">Formations</a></li>
                 <li><a href="shop.php" class="nav-link">Boutique</a></li>
@@ -348,7 +476,6 @@ try {
                 <li><a href="about.php" class="nav-link">À propos</a></li>
                 <li><a href="contact.php" class="nav-link">Contact</a></li>
                 <li><a href="basket.php" class="nav-link"><i class="fas fa-shopping-cart"></i></a></li>
-
             </ul>
             
             <div class="nav-actions">
@@ -370,188 +497,275 @@ try {
             </div>
         </nav>
     </header>
+
     <!-- Main Content -->
     <section class="section">
         <div class="container">
-            <div class="product-content">
-                <div class="product-image">
-                    <?php if ($product['image_url']): ?>
-                        <img src="../../uploads/<?= htmlspecialchars($product['image_url']) ?>" 
-                             alt="<?= htmlspecialchars($product['name']) ?>">
-                    <?php else: ?>
-                        <div style="
-                            width: 100%; 
-                            height: 300px; 
-                            background: var(--bg-secondary); 
-                            display: flex; 
-                            align-items: center; 
-                            justify-content: center;
-                            border-radius: var(--border-radius-sm);
-                        ">
-                            <i class="fas fa-image" style="font-size: 3rem; color: var(--text-secondary);"></i>
-                        </div>
-                    <?php endif; ?>
-                </div>
+            <!-- Breadcrumb -->
+            <div class="breadcrumb">
+                <a href="index.php">Accueil</a>
+                <i class="fas fa-chevron-right"></i>
+                <a href="shop.php">Boutique</a>
+                <i class="fas fa-chevron-right"></i>
+                <span><?= htmlspecialchars($product['name']) ?></span>
+            </div>
+
+            <!-- Product Hero -->
+            <div class="product-hero">
+                <?php if ($product['image_url']): ?>
+                    <img src="../../uploads/<?= htmlspecialchars($product['image_url']) ?>" 
+                         alt="<?= htmlspecialchars($product['name']) ?>" 
+                         class="product-image">
+                <?php else: ?>
+                    <div class="product-image-placeholder">
+                        <i class="fas fa-box"></i>
+                    </div>
+                <?php endif; ?>
                 
-                <div class="product-details">
-                    <h1 class="product-title"><?= htmlspecialchars($product['name']) ?></h1>
-                    
-                    <div class="product-price"><?= number_format($product['price'], 2) ?> GHS</div>
-                    
+                <div class="product-content">
+                    <div class="product-header">
+                        <div>
+                            <h1 class="product-title"><?= htmlspecialchars($product['name']) ?></h1>
+                            <div class="status-badge">Produit disponible</div>
+                        </div>
+                        
+                        <div class="product-actions">
+                            <?php if ($product['stock_quantity'] > 0): ?>
+                                <button onclick="addToCart(<?= $product['id'] ?>, 'product')" class="btn btn-primary btn-lg">
+                                    <i class="fas fa-cart-plus"></i> Ajouter au panier
+                                </button>
+                            <?php endif; ?>
+                            
+                            <a href="shop.php" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Retour
+                            </a>
+                        </div>
+                    </div>
+
                     <div class="product-meta">
                         <div class="meta-item">
-                            <i class="fas fa-user"></i>
-                            <span>Vendeur: <?= htmlspecialchars($product['vendor_name'] ?? 'TaaBia') ?></span>
+                            <i class="fas fa-store"></i>
+                            <span>Vendu par <?= htmlspecialchars($product['vendor_name'] ?? 'TaaBia') ?></span>
                         </div>
+                        
+                        <div class="meta-item">
+                            <i class="fas fa-tags"></i>
+                            <span><?= htmlspecialchars($product['category'] ?? 'Général') ?></span>
+                        </div>
+                        
                         <div class="meta-item">
                             <i class="fas fa-box"></i>
-                            <span>En stock</span>
+                            <span><?= $product['stock_quantity'] ?> en stock</span>
                         </div>
+                        
                         <div class="meta-item">
-                            <i class="fas fa-star"></i>
-                            <span>4.5/5 (12 avis)</span>
+                            <i class="fas fa-calendar"></i>
+                            <span>Ajouté le <?= date('d/m/Y', strtotime($product['created_at'])) ?></span>
                         </div>
                     </div>
-                    
-                    <p class="product-description">
+
+                    <div class="product-description">
                         <?= nl2br(htmlspecialchars($product['description'])) ?>
-                    </p>
-                    
-                    <div class="product-features">
-                        <h3 style="margin-bottom: var(--spacing-md); color: var(--text-primary);">
-                            <i class="fas fa-check-circle"></i> Caractéristiques
-                        </h3>
-                        <div class="feature-item">
-                            <i class="fas fa-check"></i>
-                            <span>Qualité garantie</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-check"></i>
-                            <span>Livraison rapide</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-check"></i>
-                            <span>Support client 24/7</span>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-check"></i>
-                            <span>Retour gratuit sous 30 jours</span>
-                        </div>
-                    </div>
-                    
-                    <div class="quantity-selector">
-                        <label style="font-weight: 500; color: var(--text-primary);">Quantité:</label>
-                        <button class="quantity-btn" onclick="updateQuantity(-1)">-</button>
-                        <input type="number" id="quantity" value="1" min="1" class="quantity-input">
-                        <button class="quantity-btn" onclick="updateQuantity(1)">+</button>
-                    </div>
-                    
-                    <div class="action-buttons">
-                        <a href="basket.php?add=<?= $product['id'] ?>" class="btn btn-primary btn-large">
-                            <i class="fas fa-shopping-cart"></i> Ajouter au panier
-                        </a>
-                        <a href="checkout.php?product=<?= $product['id'] ?>" class="btn btn-secondary btn-large">
-                            <i class="fas fa-credit-card"></i> Acheter maintenant
-                        </a>
                     </div>
                 </div>
             </div>
+
+            <!-- Product Details -->
+            <div class="product-details">
+                <div class="details-header">
+                    <h2 class="details-title">Détails du produit</h2>
+                    <div style="display: flex; align-items: center; gap: var(--spacing-lg);">
+                        <div class="product-price"><?= number_format($product['price'], 2) ?> GHS</div>
+                        <div class="product-stock <?= $product['stock_quantity'] <= 0 ? 'out-of-stock' : '' ?>">
+                            <?= $product['stock_quantity'] > 0 ? 'En stock' : 'Rupture de stock' ?>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-lg);">
+                    <div>
+                        <h4 style="color: var(--text-primary); margin-bottom: var(--spacing-sm);">Informations</h4>
+                        <ul style="color: var(--text-secondary); list-style: none; padding: 0;">
+                            <li style="margin-bottom: var(--spacing-sm);">
+                                <i class="fas fa-box" style="color: var(--primary-color); margin-right: var(--spacing-sm);"></i>
+                                Stock: <?= $product['stock_quantity'] ?> unités
+                            </li>
+                            <li style="margin-bottom: var(--spacing-sm);">
+                                <i class="fas fa-tags" style="color: var(--primary-color); margin-right: var(--spacing-sm);"></i>
+                                Catégorie: <?= htmlspecialchars($product['category'] ?? 'Général') ?>
+                            </li>
+                            <li style="margin-bottom: var(--spacing-sm);">
+                                <i class="fas fa-store" style="color: var(--primary-color); margin-right: var(--spacing-sm);"></i>
+                                Vendeur: <?= htmlspecialchars($product['vendor_name'] ?? 'TaaBia') ?>
+                            </li>
+                        </ul>
+                    </div>
+                    
+                    <div>
+                        <h4 style="color: var(--text-primary); margin-bottom: var(--spacing-sm);">Actions</h4>
+                        <div style="display: flex; flex-direction: column; gap: var(--spacing-sm);">
+                            <?php if ($product['stock_quantity'] > 0): ?>
+                                <button onclick="addToCart(<?= $product['id'] ?>, 'product')" class="btn btn-primary">
+                                    <i class="fas fa-cart-plus"></i> Ajouter au panier
+                                </button>
+                            <?php endif; ?>
+                            <a href="shop.php?category=<?= urlencode($product['category']) ?>" class="btn btn-secondary">
+                                <i class="fas fa-search"></i> Voir plus de <?= htmlspecialchars($product['category'] ?? 'produits') ?>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Related Products -->
+            <?php if (!empty($related_products)): ?>
+                <div class="related-products">
+                    <h2 class="related-title">Produits similaires</h2>
+                    <div class="related-grid">
+                        <?php foreach ($related_products as $related): ?>
+                            <div class="related-product">
+                                <h3 class="related-product-title">
+                                    <a href="view_product.php?id=<?= $related['id'] ?>" style="color: inherit; text-decoration: none;">
+                                        <?= htmlspecialchars($related['name']) ?>
+                                    </a>
+                                </h3>
+                                <div class="related-product-price"><?= number_format($related['price'], 2) ?> GHS</div>
+                                <div class="related-product-vendor">
+                                    <i class="fas fa-store"></i> <?= htmlspecialchars($related['vendor_name'] ?? 'TaaBia') ?>
+                                </div>
+                                <a href="view_product.php?id=<?= $related['id'] ?>" class="btn btn-secondary">
+                                    <i class="fas fa-eye"></i> Voir détails
+                                </a>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Vendor's Other Products -->
+            <?php if (!empty($vendor_products)): ?>
+                <div class="related-products">
+                    <h2 class="related-title">Autres produits de <?= htmlspecialchars($product['vendor_name'] ?? 'ce vendeur') ?></h2>
+                    <div class="related-grid">
+                        <?php foreach ($vendor_products as $vendor_product): ?>
+                            <div class="related-product">
+                                <h3 class="related-product-title">
+                                    <a href="view_product.php?id=<?= $vendor_product['id'] ?>" style="color: inherit; text-decoration: none;">
+                                        <?= htmlspecialchars($vendor_product['name']) ?>
+                                    </a>
+                                </h3>
+                                <div class="related-product-price"><?= number_format($vendor_product['price'], 2) ?> GHS</div>
+                                <div class="related-product-vendor">
+                                    <i class="fas fa-tags"></i> <?= htmlspecialchars($vendor_product['category'] ?? 'Général') ?>
+                                </div>
+                                <a href="view_product.php?id=<?= $vendor_product['id'] ?>" class="btn btn-secondary">
+                                    <i class="fas fa-eye"></i> Voir détails
+                                </a>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
     </section>
 
     <script>
-        function updateQuantity(change) {
-            const input = document.getElementById('quantity');
-            const newValue = parseInt(input.value) + change;
-            if (newValue >= 1) {
-                input.value = newValue;
-            }
+        // Add to Cart Functionality
+        function addToCart(productId, type) {
+            fetch('add_to_cart.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `product_id=${productId}&type=${type}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('Produit ajouté au panier !', 'success');
+                    updateCartCount(data.cart_count);
+                } else {
+                    showNotification(data.message || 'Erreur lors de l\'ajout au panier', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('Erreur lors de l\'ajout au panier', 'error');
+            });
         }
-    </script>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-section">
-                    <h3><i class="fas fa-graduation-cap"></i> TaaBia</h3>
-                    <p>Votre plateforme d'apprentissage et d'innovation en Afrique</p>
-                    <p>Démocratiser l'accès à l'éducation et aux produits innovants</p>
-                </div>
-                
-                <div class="footer-section">
-                    <h3>Services</h3>
-                    <a href="courses.php">Formations</a>
-                    <a href="shop.php">Boutique</a>
-                    <a href="upcoming_events.php">Événements</a>
-                    <a href="contact.php">Support</a>
-                </div>
-                
-                <div class="footer-section">
-                    <h3>Contact</h3>
-                    <p><i class="fas fa-envelope"></i> contact@taabia.com</p>
-                    <p><i class="fas fa-phone"></i> +233 XX XXX XXXX</p>
-                    <p><i class="fas fa-map-marker-alt"></i> Accra, Ghana</p>
-                </div>
-                
-                <div class="footer-section">
-                    <h3>Suivez-nous</h3>
-                    <a href="#"><i class="fab fa-facebook"></i> Facebook</a>
-                    <a href="#"><i class="fab fa-twitter"></i> Twitter</a>
-                    <a href="#"><i class="fab fa-linkedin"></i> LinkedIn</a>
-                    <a href="#"><i class="fab fa-instagram"></i> Instagram</a>
-                </div>
-            </div>
+        // Show notification
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: var(--spacing-md) var(--spacing-lg);
+                border-radius: var(--border-radius-sm);
+                color: white;
+                font-weight: 500;
+                z-index: 10000;
+                animation: slideIn 0.3s ease-out;
+                background: ${type === 'success' ? 'var(--success-color)' : 'var(--danger-color)'};
+            `;
+            notification.textContent = message;
             
-            <div class="footer-bottom">
-                <p>&copy; <?= date('Y') ?> TaaBia. Tous droits réservés.</p>
-            </div>
-        </div>
-    </footer>
-
-    <style>
-        .footer {
-            background: var(--text-primary);
-            color: var(--text-white);
-            padding: var(--spacing-2xl) 0;
-            margin-top: var(--spacing-2xl);
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.animation = 'slideOut 0.3s ease-in';
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
         }
 
-        .footer-content {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: var(--spacing-xl);
-        }
-
-        .footer-section h3 {
-            margin-bottom: var(--spacing-md);
-            color: var(--primary-light);
-        }
-
-        .footer-section p, .footer-section a {
-            color: var(--text-secondary);
-            text-decoration: none;
-            margin-bottom: var(--spacing-sm);
-            display: block;
-        }
-
-        .footer-section a:hover {
-            color: var(--primary-light);
-        }
-
-        .footer-bottom {
-            border-top: 1px solid var(--text-secondary);
-            padding-top: var(--spacing-lg);
-            margin-top: var(--spacing-xl);
-            text-align: center;
-            color: var(--text-secondary);
-        }
-
-        @media (max-width: 768px) {
-            .footer-content {
-                grid-template-columns: 1fr;
+        // Update cart count
+        function updateCartCount(count) {
+            const cartLink = document.querySelector('a[href="basket.php"]');
+            if (cartLink) {
+                let badge = cartLink.querySelector('.cart-badge');
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'cart-badge';
+                    badge.style.cssText = `
+                        position: absolute;
+                        top: -8px;
+                        right: -8px;
+                        background: var(--danger-color);
+                        color: white;
+                        border-radius: 50%;
+                        width: 20px;
+                        height: 20px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 0.75rem;
+                        font-weight: 600;
+                    `;
+                    cartLink.style.position = 'relative';
+                    cartLink.appendChild(badge);
+                }
+                badge.textContent = count;
+                badge.style.display = count > 0 ? 'flex' : 'none';
             }
         }
-    </style>
+
+        // Add CSS animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
 </body>
 </html>

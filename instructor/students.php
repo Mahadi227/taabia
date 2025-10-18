@@ -48,7 +48,7 @@ try {
     $where_clause = implode(" AND ", $where_conditions);
 
     // Determine sort order
-    $order_by = match($sort_by) {
+    $order_by = match ($sort_by) {
         'name' => 's.full_name ASC',
         'email' => 's.email ASC',
         'course' => 'c.title ASC',
@@ -98,7 +98,6 @@ try {
     ");
     $stmt->execute([$instructor_id]);
     $stats = $stmt->fetch();
-
 } catch (PDOException $e) {
     error_log("Database error in students: " . $e->getMessage());
     $students = [];
@@ -109,6 +108,7 @@ try {
 
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -126,7 +126,7 @@ try {
                 <h2><i class="fas fa-chalkboard-teacher"></i> TaaBia</h2>
                 <p>Espace Formateur</p>
             </div>
-            
+
             <nav class="instructor-nav">
                 <a href="index.php" class="instructor-nav-item">
                     <i class="fas fa-tachometer-alt"></i>
@@ -236,19 +236,19 @@ try {
                         <i class="fas fa-search"></i> Recherche et filtres
                     </h3>
                 </div>
-                
+
                 <div style="padding: var(--spacing-6);">
                     <form method="GET" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-4);">
                         <div class="instructor-form-group">
                             <label class="instructor-form-label">
                                 <i class="fas fa-search"></i> Rechercher
                             </label>
-                            <input type="text" name="search" 
-                                   class="instructor-form-input" 
-                                   placeholder="Nom ou email de l'étudiant"
-                                   value="<?= htmlspecialchars($search) ?>">
+                            <input type="text" name="search"
+                                class="instructor-form-input"
+                                placeholder="Nom ou email de l'étudiant"
+                                value="<?= htmlspecialchars($search) ?>">
                         </div>
-                        
+
                         <div class="instructor-form-group">
                             <label class="instructor-form-label">
                                 <i class="fas fa-book"></i> Cours
@@ -262,7 +262,7 @@ try {
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        
+
                         <div class="instructor-form-group">
                             <label class="instructor-form-label">
                                 <i class="fas fa-filter"></i> Statut
@@ -274,7 +274,7 @@ try {
                                 <option value="inactive" <?= $filter_status == 'inactive' ? 'selected' : '' ?>>Inactifs</option>
                             </select>
                         </div>
-                        
+
                         <div class="instructor-form-group">
                             <label class="instructor-form-label">
                                 <i class="fas fa-sort"></i> Trier par
@@ -288,13 +288,13 @@ try {
                                 <option value="recent" <?= $sort_by == 'recent' ? 'selected' : '' ?>>Activité récente</option>
                             </select>
                         </div>
-                        
+
                         <div style="display: flex; gap: var(--spacing-2); align-items: end;">
                             <button type="submit" class="instructor-btn instructor-btn-primary">
                                 <i class="fas fa-search"></i>
                                 Filtrer
                             </button>
-                            
+
                             <a href="students.php" class="instructor-btn instructor-btn-secondary">
                                 <i class="fas fa-times"></i>
                                 Réinitialiser
@@ -311,7 +311,7 @@ try {
                         <i class="fas fa-users"></i> Liste des étudiants (<?= count($students) ?>)
                     </h3>
                 </div>
-                
+
                 <?php if (count($students) === 0): ?>
                     <div style="padding: var(--spacing-8); text-align: center; color: var(--gray-500);">
                         <i class="fas fa-users" style="font-size: 3rem; margin-bottom: var(--spacing-4); opacity: 0.5;"></i>
@@ -355,13 +355,13 @@ try {
                                             <?php endif; ?>
                                         </div>
                                     </div>
-                                    
+
                                     <div class="instructor-student-content">
                                         <div class="instructor-student-course">
                                             <i class="fas fa-book"></i>
                                             <?= htmlspecialchars($student['course_title']) ?>
                                         </div>
-                                        
+
                                         <div class="instructor-student-progress">
                                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-1);">
                                                 <span style="font-weight: 600; color: var(--gray-700);">
@@ -375,7 +375,7 @@ try {
                                                 <div class="instructor-progress-fill" style="width: <?= $student['progress'] ?>%"></div>
                                             </div>
                                         </div>
-                                        
+
                                         <div class="instructor-student-stats">
                                             <span>
                                                 <i class="fas fa-play-circle"></i>
@@ -387,33 +387,33 @@ try {
                                             </span>
                                         </div>
                                     </div>
-                                    
+
                                     <div class="instructor-student-actions">
-                                        <a href="view_student_progress.php?student_id=<?= $student['student_id'] ?>&course_id=<?= $student['course_id'] ?>" 
-                                           class="instructor-btn instructor-btn-primary"
-                                           style="padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);">
+                                        <a href="view_student_progress.php?student_id=<?= $student['student_id'] ?>&course_id=<?= $student['course_id'] ?>"
+                                            class="instructor-btn instructor-btn-primary"
+                                            style="padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);">
                                             <i class="fas fa-chart-line"></i>
                                             Progression
                                         </a>
-                                        
-                                        <a href="message_student.php?id=<?= $student['student_id'] ?>" 
-                                           class="instructor-btn instructor-btn-info"
-                                           style="padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);">
+
+                                        <a href="message_student.php?id=<?= $student['student_id'] ?>"
+                                            class="instructor-btn instructor-btn-info"
+                                            style="padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);">
                                             <i class="fas fa-envelope"></i>
                                             Message
                                         </a>
-                                        
-                                        <a href="update_progress.php?student_id=<?= $student['student_id'] ?>&course_id=<?= $student['course_id'] ?>" 
-                                           class="instructor-btn instructor-btn-success"
-                                           style="padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);">
+
+                                        <a href="update_progress.php?student_id=<?= $student['student_id'] ?>&course_id=<?= $student['course_id'] ?>"
+                                            class="instructor-btn instructor-btn-success"
+                                            style="padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);">
                                             <i class="fas fa-edit"></i>
                                             Modifier
                                         </a>
-                                        
-                                        <a href="remove_student.php?id=<?= $student['student_id'] ?>" 
-                                           class="instructor-btn"
-                                           style="background: var(--danger-color); color: var(--white); padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);"
-                                           onclick="return confirm('Êtes-vous sûr de vouloir retirer cet étudiant du cours ?')">
+
+                                        <a href="remove_student.php?id=<?= $student['student_id'] ?>"
+                                            class="instructor-btn"
+                                            style="background: var(--danger-color); color: var(--white); padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);"
+                                            onclick="return confirm('Êtes-vous sûr de vouloir retirer cet étudiant du cours ?')">
                                             <i class="fas fa-trash"></i>
                                             Retirer
                                         </a>
@@ -431,12 +431,12 @@ try {
                     <i class="fas fa-arrow-left"></i>
                     Retour aux cours
                 </a>
-                
+
                 <a href="validate_submissions.php" class="instructor-btn instructor-btn-warning">
                     <i class="fas fa-check-circle"></i>
                     Devoirs à valider
                 </a>
-                
+
                 <a href="earnings.php" class="instructor-btn instructor-btn-success">
                     <i class="fas fa-chart-line"></i>
                     Mes gains
@@ -454,7 +454,7 @@ try {
                     this.closest('form').submit();
                 });
             });
-            
+
             // Search with debounce
             const searchInput = document.querySelector('input[name="search"]');
             let searchTimeout;
@@ -467,4 +467,5 @@ try {
         });
     </script>
 </body>
+
 </html>

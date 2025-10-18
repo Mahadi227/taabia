@@ -286,7 +286,7 @@ $orders = $stmt->fetchAll();
                                 </div>
                                 <div class="order-info-item">
                                     <span class="order-info-label">Total</span>
-                                    <span class="order-info-value"><?= number_format($order['total_amount'], 0, ',', ' ') ?> FCFA</span>
+                                    <span class="order-info-value"><?= number_format($order['total_amount'], 0, ',', ' ') ?> GHS</span>
                                 </div>
                             </div>
                         </div>
@@ -314,14 +314,14 @@ $orders = $stmt->fetchAll();
                                         </div>
                                     </div>
                                     <div class="item-price">
-                                        <?= number_format($item['price'] * $item['quantity'], 0, ',', ' ') ?> FCFA
+                                        <?= number_format($item['price'] * $item['quantity'], 0, ',', ' ') ?> GHS
                                     </div>
                                 </div>
                             <?php endforeach; ?>
                         </div>
                         
                         <div class="order-total">
-                            Total: <?= number_format($order['total_amount'], 0, ',', ' ') ?> FCFA
+                            Total: <?= number_format($order['total_amount'], 0, ',', ' ') ?> GHS
                         </div>
                     </div>
                 <?php endforeach; ?>

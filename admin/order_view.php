@@ -1,7 +1,15 @@
 <?php
+// Start output buffering to prevent any accidental output
+ob_start();
+
+// Handle language switching first
+require_once 'language_handler.php';
+
+// Now load the session and other includes
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/function.php';
+require_once '../includes/i18n.php';
 require_role('admin');
 
 if (!isset($_GET['id'])) redirect('orders.php');
@@ -31,7 +39,6 @@ try {
     ");
     $stmt->execute([$order_id]);
     $items = $stmt->fetchAll();
-
 } catch (PDOException $e) {
     error_log("Database error in admin/order_view.php: " . $e->getMessage());
     redirect('orders.php');
@@ -39,139 +46,177 @@ try {
 ?>
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Détail commande #<?= $order_id ?> | Admin | TaaBia</title>
+    <title><?= __('order_details') ?> #<?= $order_id ?> | <?= __('admin_panel') ?> | TaaBia</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="admin-styles.css">
+
+    <style>
+        /* Admin Language Switcher */
+        .admin-language-switcher {
+            position: relative;
+            display: inline-block;
+        }
+
+        .admin-language-dropdown {
+            position: relative;
+        }
+
+        .admin-language-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--light-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--dark-color);
+            transition: var(--transition);
+        }
+
+        .admin-language-btn:hover {
+            background: white;
+            border-color: var(--primary-color);
+        }
+
+        .admin-language-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-sm);
+            box-shadow: var(--shadow-lg);
+            min-width: 150px;
+            z-index: 1000;
+            display: none;
+            margin-top: 4px;
+        }
+
+        .admin-language-menu.show {
+            display: block;
+        }
+
+        .admin-language-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            text-decoration: none;
+            color: var(--dark-color);
+            transition: var(--transition);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-language-item:last-child {
+            border-bottom: none;
+        }
+
+        .admin-language-item:hover {
+            background: var(--light-color);
+        }
+
+        .admin-language-item.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .language-flag {
+            font-size: 16px;
+        }
+
+        .language-name {
+            flex: 1;
+            font-size: 14px;
+        }
+
+        .admin-language-item i {
+            font-size: 12px;
+            margin-left: auto;
+        }
+    </style>
 </head>
+
 <body>
     <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h2>TaaBia Admin</h2>
-            <p>Plateforme de gestion</p>
-        </div>
-        
-        <nav class="sidebar-nav">
-            <div class="nav-item">
-                <a href="index.php" class="nav-link">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Tableau de bord</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="users.php" class="nav-link">
-                    <i class="fas fa-users"></i>
-                    <span>Utilisateurs</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="courses.php" class="nav-link">
-                    <i class="fas fa-book"></i>
-                    <span>Formations</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="products.php" class="nav-link">
-                    <i class="fas fa-box"></i>
-                    <span>Produits</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="orders.php" class="nav-link active">
-                    <i class="fas fa-shopping-cart"></i>
-                    <span>Commandes</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="events.php" class="nav-link">
-                    <i class="fas fa-calendar-alt"></i>
-                    <span>Événements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="event_registrations.php" class="nav-link">
-                    <i class="fas fa-user-check"></i>
-                    <span>Inscriptions</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="contact_messages.php" class="nav-link">
-                    <i class="fas fa-envelope"></i>
-                    <span>Messages</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="transactions.php" class="nav-link">
-                    <i class="fas fa-exchange-alt"></i>
-                    <span>Transactions</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payout_requests.php" class="nav-link">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <span>Demandes de paiement</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="earnings.php" class="nav-link">
-                    <i class="fas fa-wallet"></i>
-                    <span>Revenus</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payments.php" class="nav-link">
-                    <i class="fas fa-money-bill-wave"></i>
-                    <span>Paiements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payment_stats.php" class="nav-link">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Statistiques</span>
-                </a>
-            </div>
-            
-            <div class="nav-item" style="margin-top: 2rem;">
-                <a href="../auth/logout.php" class="nav-link">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </nav>
-    </div>
+    <?php include 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->
     <div class="main-content">
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1 class="page-title">📦 Détail commande #<?= $order_id ?></h1>
-                
-                <div class="header-actions">
-                    <div class="user-menu">
-                        <div class="user-avatar">
-                            <i class="fas fa-user"></i>
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div class="page-title">
+                        <h1><i class="fas fa-shopping-cart"></i> <?= __('order_details') ?> #<?= $order_id ?></h1>
+                        <p><?= __('order_complete_info') ?></p>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 20px;">
+                        <!-- Language Switcher -->
+                        <div class="admin-language-switcher">
+                            <div class="admin-language-dropdown">
+                                <button class="admin-language-btn" onclick="toggleAdminLanguageDropdown()">
+                                    <i class="fas fa-globe"></i>
+                                    <span><?= getCurrentLanguage() == 'fr' ? 'Français' : 'English' ?></span>
+                                    <i class="fas fa-chevron-down"></i>
+                                </button>
+
+                                <div class="admin-language-menu" id="adminLanguageDropdown">
+                                    <a href="?lang=fr" class="admin-language-item <?= getCurrentLanguage() == 'fr' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇫🇷</span>
+                                        <span class="language-name">Français</span>
+                                        <?php if (getCurrentLanguage() == 'fr'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                    <a href="?lang=en" class="admin-language-item <?= getCurrentLanguage() == 'en' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇬🇧</span>
+                                        <span class="language-name">English</span>
+                                        <?php if (getCurrentLanguage() == 'en'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div style="font-weight: 600; font-size: 0.875rem;">Administrateur</div>
-                            <div style="font-size: 0.75rem; opacity: 0.7;">Admin Panel</div>
+
+                        <div class="d-flex gap-2">
+                            <a href="edit_order.php?id=<?= $order_id ?>" class="btn btn-warning">
+                                <i class="fas fa-edit"></i>
+                                <?= __('edit') ?>
+                            </a>
+                            <a href="orders.php" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left"></i>
+                                <?= __('back') ?>
+                            </a>
+                        </div>
+
+                        <div class="user-menu">
+                            <?php
+                            $current_user = null;
+                            try {
+                                $stmt = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+                                $stmt->execute([current_user_id()]);
+                                $current_user = $stmt->fetch();
+                            } catch (PDOException $e) {
+                                error_log("Error fetching current user: " . $e->getMessage());
+                            }
+                            ?>
+                            <div class="user-avatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.875rem;"><?= htmlspecialchars($current_user['full_name'] ?? __('administrator')) ?></div>
+                                <div style="font-size: 0.75rem; opacity: 0.7;"><?= __('admin_panel') ?></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -183,9 +228,9 @@ try {
             <!-- Order Information -->
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">Informations de la commande</h3>
+                    <h3 class="card-title"><?= __('order_information') ?></h3>
                 </div>
-                
+
                 <div style="padding: var(--spacing-lg);">
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--spacing-lg);">
                         <div style="
@@ -194,7 +239,7 @@ try {
                             border-radius: var(--radius-lg);
                         ">
                             <div style="font-weight: 600; color: var(--gray-900); margin-bottom: var(--spacing-sm);">
-                                <i class="fas fa-user"></i> Client
+                                <i class="fas fa-user"></i> <?= __('customer') ?>
                             </div>
                             <div style="color: var(--gray-700);">
                                 <?= htmlspecialchars($order['full_name']) ?>
@@ -208,14 +253,14 @@ try {
                                 </div>
                             <?php endif; ?>
                         </div>
-                        
+
                         <div style="
                             background: var(--gray-50); 
                             padding: var(--spacing-md); 
                             border-radius: var(--radius-lg);
                         ">
                             <div style="font-weight: 600; color: var(--gray-900); margin-bottom: var(--spacing-sm);">
-                                <i class="fas fa-calendar"></i> Date de commande
+                                <i class="fas fa-calendar"></i> <?= __('order_date') ?>
                             </div>
                             <div style="color: var(--gray-700);">
                                 <?= date('d/m/Y', strtotime($order['ordered_at'])) ?>
@@ -224,37 +269,37 @@ try {
                                 <?= date('H:i', strtotime($order['ordered_at'])) ?>
                             </div>
                         </div>
-                        
+
                         <div style="
                             background: var(--gray-50); 
                             padding: var(--spacing-md); 
                             border-radius: var(--radius-lg);
                         ">
                             <div style="font-weight: 600; color: var(--gray-900); margin-bottom: var(--spacing-sm);">
-                                <i class="fas fa-info-circle"></i> Statut
+                                <i class="fas fa-info-circle"></i> <?= __('status') ?>
                             </div>
                             <div>
                                 <?php
                                 $status_labels = [
-                                    'pending' => ['En attente', 'badge-warning'],
-                                    'processing' => ['En traitement', 'badge-info'],
-                                    'shipped' => ['Expédiée', 'badge-primary'],
-                                    'delivered' => ['Livrée', 'badge-success'],
-                                    'cancelled' => ['Annulée', 'badge-danger']
+                                    'pending' => [__('pending'), 'badge-warning'],
+                                    'processing' => [__('processing'), 'badge-info'],
+                                    'shipped' => [__('shipped'), 'badge-primary'],
+                                    'delivered' => [__('delivered'), 'badge-success'],
+                                    'cancelled' => [__('cancelled'), 'badge-danger']
                                 ];
-                                $status_info = $status_labels[$order['status']] ?? ['Inconnu', 'badge-secondary'];
+                                $status_info = $status_labels[$order['status']] ?? [__('unknown'), 'badge-secondary'];
                                 ?>
                                 <span class="badge <?= $status_info[1] ?>"><?= $status_info[0] ?></span>
                             </div>
                         </div>
-                        
+
                         <div style="
                             background: var(--gray-50); 
                             padding: var(--spacing-md); 
                             border-radius: var(--radius-lg);
                         ">
                             <div style="font-weight: 600; color: var(--gray-900); margin-bottom: var(--spacing-sm);">
-                                <i class="fas fa-money-bill-wave"></i> Total
+                                <i class="fas fa-money-bill-wave"></i> <?= __('total') ?>
                             </div>
                             <div style="color: var(--success-color); font-weight: 600; font-size: var(--font-size-lg);">
                                 <?= number_format($order['total_amount'], 2) ?> GHS
@@ -267,20 +312,20 @@ try {
             <!-- Order Items -->
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">Articles de la commande</h3>
+                    <h3 class="card-title"><?= __('order_items') ?></h3>
                     <div class="d-flex gap-2">
-                        <span class="badge badge-primary"><?= count($items) ?> articles</span>
+                        <span class="badge badge-primary"><?= count($items) ?> <?= __('items') ?></span>
                     </div>
                 </div>
-                
+
                 <div class="table-container">
                     <table class="table">
                         <thead>
                             <tr>
-                                <th>Produit</th>
-                                <th>Prix unitaire</th>
-                                <th>Quantité</th>
-                                <th>Sous-total</th>
+                                <th><?= __('product') ?></th>
+                                <th><?= __('unit_price') ?></th>
+                                <th><?= __('quantity') ?></th>
+                                <th><?= __('subtotal') ?></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -289,9 +334,13 @@ try {
                                     <td>
                                         <div class="d-flex align-center">
                                             <?php if ($item['image_url']): ?>
-                                                <img src="<?= htmlspecialchars($item['image_url']) ?>" 
-                                                     alt="<?= htmlspecialchars($item['name']) ?>"
-                                                     style="width: 40px; height: 40px; object-fit: cover; border-radius: var(--radius-sm); margin-right: var(--spacing-sm);">
+                                                <img src="../uploads/<?= htmlspecialchars($item['image_url']) ?>"
+                                                    alt="<?= htmlspecialchars($item['name']) ?>"
+                                                    style="width: 40px; height: 40px; object-fit: cover; border-radius: var(--radius-sm); margin-right: var(--spacing-sm);"
+                                                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                                <div style="width: 40px; height: 40px; background: var(--gray-200); border-radius: var(--radius-sm); margin-right: var(--spacing-sm); display: none; align-items: center; justify-content: center;">
+                                                    <i class="fas fa-box" style="color: var(--gray-500);"></i>
+                                                </div>
                                             <?php else: ?>
                                                 <div style="width: 40px; height: 40px; background: var(--gray-200); border-radius: var(--radius-sm); margin-right: var(--spacing-sm); display: flex; align-items: center; justify-content: center;">
                                                     <i class="fas fa-box" style="color: var(--gray-500);"></i>
@@ -326,20 +375,39 @@ try {
             <div style="margin-top: var(--spacing-lg); display: flex; gap: var(--spacing-md); flex-wrap: wrap;">
                 <a href="orders.php" class="btn btn-secondary">
                     <i class="fas fa-arrow-left"></i>
-                    Retour aux commandes
+                    <?= __('back_to_orders') ?>
                 </a>
-                
+
                 <a href="edit_order.php?id=<?= $order_id ?>" class="btn btn-primary">
                     <i class="fas fa-edit"></i>
-                    Modifier la commande
+                    <?= __('edit_order') ?>
                 </a>
-                
+
                 <a href="print_order.php?id=<?= $order_id ?>" class="btn btn-info" target="_blank">
                     <i class="fas fa-print"></i>
-                    Imprimer
+                    <?= __('print') ?>
                 </a>
             </div>
         </div>
     </div>
+
+    <script>
+        // Admin Language Switcher
+        function toggleAdminLanguageDropdown() {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        // Close admin language dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            const switcher = document.querySelector('.admin-language-switcher');
+
+            if (switcher && !switcher.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
+    </script>
 </body>
+
 </html>

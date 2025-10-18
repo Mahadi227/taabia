@@ -1,6 +1,59 @@
 <?php
 require_once '../../includes/i18n.php';
 require_once '../../includes/db.php';
+
+// Get contact statistics
+try {
+    $contact_stats = [
+        'total_messages' => $pdo->query("SELECT COUNT(*) FROM contact_messages")->fetchColumn(),
+        'unread_messages' => $pdo->query("SELECT COUNT(*) FROM contact_messages WHERE is_read = 0")->fetchColumn(),
+        'today_messages' => $pdo->query("SELECT COUNT(*) FROM contact_messages WHERE DATE(created_at) = CURDATE()")->fetchColumn()
+    ];
+    
+    // Get recent contact messages (for admin display)
+    $recent_messages = $pdo->query("
+        SELECT * FROM contact_messages 
+        ORDER BY created_at DESC 
+        LIMIT 5
+    ")->fetchAll();
+    
+} catch (PDOException $e) {
+    $contact_stats = ['total_messages' => 0, 'unread_messages' => 0, 'today_messages' => 0];
+    $recent_messages = [];
+}
+
+// Handle form submission
+$success_message = '';
+$error_message = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $subject = trim($_POST['subject'] ?? '');
+    $message = trim($_POST['message'] ?? '');
+    
+    // Validation
+    if (empty($name) || empty($email) || empty($subject) || empty($message)) {
+        $error_message = 'Tous les champs sont obligatoires.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error_message = 'Veuillez entrer une adresse email valide.';
+    } else {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO contact_messages (name, email, subject, message, created_at) 
+                VALUES (?, ?, ?, ?, NOW())
+            ");
+            $stmt->execute([$name, $email, $subject, $message]);
+            $success_message = 'Votre message a été envoyé avec succès ! Nous vous répondrons dans les plus brefs délais.';
+            
+            // Clear form data
+            $name = $email = $subject = $message = '';
+            
+        } catch (PDOException $e) {
+            $error_message = 'Une erreur est survenue lors de l\'envoi du message. Veuillez réessayer.';
+        }
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -306,41 +359,47 @@ require_once '../../includes/db.php';
     </style>
 </head>
 <body>
-    <!-- Header -->
-    <header class="header">
+  <!-- Header -->
+  <header class="header">
         <nav class="navbar">
             <a href="index.php" class="logo">
                 <i class="fas fa-graduation-cap"></i> TaaBia
             </a>
             
-            <ul class="nav-menu">
-                                 <li><a href="index.php" class="nav-link"><?= __('welcome') ?></a></li>
-                 <li><a href="courses.php" class="nav-link"><?= __('courses') ?></a></li>
-                 <li><a href="shop.php" class="nav-link"><?= __('shop') ?></a></li>
-                 <li><a href="upcoming_events.php" class="nav-link"><?= __('events') ?></a></li>
-                 <li><a href="about.php" class="nav-link"><?= __('about') ?></a></li>
-                 <li><a href="contact.php" class="nav-link"><?= __('contact') ?></a></li>
-                 
-                 <li style="margin-left: auto;">
-                     <?php include '../../includes/public_language_switcher.php'; ?>
-                 </li>
+            <button class="hamburger" id="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <ul class="nav-menu" id="nav-menu">
+                <li><a href="index.php" class="nav-link"><?= __('welcome') ?></a></li>
+                <li><a href="courses.php" class="nav-link"><?= __('courses') ?></a></li>
+                <li><a href="shop.php" class="nav-link"><?= __('shop') ?></a></li>
+                <li><a href="upcoming_events.php" class="nav-link"><?= __('events') ?></a></li>
+                <li><a href="blog.php" class="nav-link"><?= __('blog') ?></a></li>
+                <li><a href="about.php" class="nav-link"><?= __('about') ?></a></li>
+                <li><a href="contact.php" class="nav-link"><?= __('contact') ?></a></li>
+                <li><a href="basket.php" class="nav-link"><i class="fas fa-shopping-cart"></i></a></li>
+                <li style="margin-left: auto;">
+                    <?php include '../../includes/public_language_switcher.php'; ?>
+                </li>
             </ul>
             
             <div class="nav-actions">
                 <?php if (isset($_SESSION['user_id'])): ?>
-                                         <a href="../student/index.php" class="btn btn-secondary">
-                         <i class="fas fa-user"></i> <?= __('my_profile') ?>
-                     </a>
-                     <a href="../auth/logout.php" class="btn btn-primary">
-                         <i class="fas fa-sign-out-alt"></i> <?= __('logout') ?>
-                     </a>
-                 <?php else: ?>
-                     <a href="../auth/login.php" class="btn btn-secondary">
-                         <i class="fas fa-sign-in-alt"></i> <?= __('login') ?>
-                     </a>
-                     <a href="../auth/register.php" class="btn btn-primary">
-                         <i class="fas fa-user-plus"></i> <?= __('register') ?>
-                     </a>
+                    <a href="../student/index.php" class="btn btn-secondary">
+                        <i class="fas fa-user"></i> <?= __('my_profile') ?>
+                    </a>
+                    <a href="../../auth/logout.php" class="btn btn-primary">
+                        <i class="fas fa-sign-out-alt"></i> <?= __('logout') ?>
+                    </a>
+                <?php else: ?>
+                    <a href="../../auth/login.php" class="btn btn-secondary">
+                        <i class="fas fa-sign-in-alt"></i> <?= __('login') ?>
+                    </a>
+                    <a href="../../auth/register.php" class="btn btn-primary">
+                        <i class="fas fa-user-plus"></i> <?= __('register') ?>
+                    </a>
                 <?php endif; ?>
             </div>
         </nav>

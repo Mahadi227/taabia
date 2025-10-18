@@ -1,8 +1,15 @@
 <?php
+// Start output buffering to prevent any accidental output
+ob_start();
+
+// Handle language switching first
+require_once 'language_handler.php';
+
+// Now load the session and other includes
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/function.php';
-
+require_once '../includes/i18n.php';
 require_role('admin');
 
 // Initialize variables
@@ -32,12 +39,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
                 $stmt->bindValue(':paid_at', $now);
             }
             $stmt->execute();
-            
+
             // Set success message
-            $_SESSION['success_message'] = "Demande de paiement mise à jour avec succès.";
+            $_SESSION['success_message'] = __('payout_request_updated_successfully');
         } catch (PDOException $e) {
             error_log("Database error in admin/payout_requests.php update: " . $e->getMessage());
-            $_SESSION['error_message'] = "Erreur lors de la mise à jour de la demande.";
+            $_SESSION['error_message'] = __('error_updating_payout_request');
         }
     }
 
@@ -132,147 +139,381 @@ try {
 ?>
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Demandes de Paiement | Admin | TaaBia</title>
-    
+    <title><?= __('payout_requests') ?> | <?= __('admin_panel') ?> | TaaBia</title>
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Admin Styles -->
     <link rel="stylesheet" href="admin-styles.css">
+
+    <style>
+        /* Hamburger Menu Styles */
+        .hamburger-menu {
+            display: none;
+            flex-direction: column;
+            justify-content: space-around;
+            width: 30px;
+            height: 30px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            z-index: 1001;
+            transition: all 0.3s ease;
+        }
+
+        .hamburger-line {
+            width: 100%;
+            height: 3px;
+            background-color: var(--text-primary);
+            border-radius: 2px;
+            transition: all 0.3s ease;
+            transform-origin: center;
+        }
+
+        .hamburger-menu.active .hamburger-line:nth-child(1) {
+            transform: rotate(45deg) translate(6px, 6px);
+        }
+
+        .hamburger-menu.active .hamburger-line:nth-child(2) {
+            opacity: 0;
+        }
+
+        .hamburger-menu.active .hamburger-line:nth-child(3) {
+            transform: rotate(-45deg) translate(6px, -6px);
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .sidebar-overlay.active {
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .hamburger-menu {
+                display: flex;
+            }
+
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+                z-index: 1000;
+            }
+
+            .sidebar.active {
+                transform: translateX(0);
+            }
+
+            .sidebar-overlay {
+                display: block;
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .header-content {
+                padding-left: 20px;
+            }
+        }
+
+        /* Enhanced Payout Management Styles */
+        .payout-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .payout-status.pending {
+            background: linear-gradient(45deg, #ff9800, #ffb74d);
+            color: white;
+        }
+
+        .payout-status.approved {
+            background: linear-gradient(45deg, #4caf50, #66bb6a);
+            color: white;
+        }
+
+        .payout-status.rejected {
+            background: linear-gradient(45deg, #f44336, #ef5350);
+            color: white;
+        }
+
+        .payout-status.paid {
+            background: linear-gradient(45deg, #2196f3, #42a5f5);
+            color: white;
+        }
+
+        .payout-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .payout-actions .btn {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .payout-actions .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .payout-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e9ecef;
+            transition: all 0.3s ease;
+            margin-bottom: 1rem;
+        }
+
+        .payout-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .payout-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .payout-user {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .payout-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #00796b, #26a69a);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 1.25rem;
+        }
+
+        .payout-info h4 {
+            margin: 0;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .payout-info p {
+            margin: 0.25rem 0 0 0;
+            color: #6c757d;
+            font-size: 0.875rem;
+        }
+
+        .payout-amount {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #00796b;
+        }
+
+        .payout-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .payout-detail {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .payout-detail-label {
+            font-size: 0.875rem;
+            color: #6c757d;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+
+        .payout-detail-value {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        /* Admin Language Switcher Styles */
+        .admin-language-switcher {
+            position: relative;
+            display: inline-block;
+        }
+
+        .admin-language-dropdown {
+            position: relative;
+        }
+
+        .admin-language-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: var(--transition);
+            cursor: pointer;
+        }
+
+        .admin-language-btn:hover {
+            background: #f8f9fa;
+            border-color: var(--primary-color);
+        }
+
+        .admin-language-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-medium);
+            min-width: 160px;
+            z-index: 1000;
+            display: none;
+            overflow: hidden;
+        }
+
+        .admin-language-menu.show {
+            display: block;
+        }
+
+        .admin-language-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: var(--transition);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-language-item:last-child {
+            border-bottom: none;
+        }
+
+        .admin-language-item:hover {
+            background: #f8f9fa;
+        }
+
+        .admin-language-item.active {
+            background: var(--primary-light);
+            color: var(--primary-color);
+        }
+
+        .language-flag {
+            font-size: 1rem;
+        }
+
+        .language-name {
+            flex: 1;
+        }
+
+        .admin-language-item i {
+            color: var(--success-color);
+            font-size: 0.75rem;
+        }
+    </style>
 </head>
 
 <body>
+    <!-- Sidebar Overlay for Mobile -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
     <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h2>TaaBia Admin</h2>
-            <p><?php
-                $current_user = null;
-                try {
-                    $stmt = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
-                    $stmt->execute([current_user_id()]);
-                    $current_user = $stmt->fetch();
-                } catch (PDOException $e) {
-                    error_log("Error fetching current user: " . $e->getMessage());
-                }
-                echo htmlspecialchars($current_user['full_name'] ?? 'Administrateur');
-            ?></p>
-        </div>
-        
-        <nav class="sidebar-nav">
-            <div class="nav-item">
-                <a href="index.php" class="nav-link">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Tableau de bord</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="users.php" class="nav-link">
-                    <i class="fas fa-users"></i>
-                    <span>Utilisateurs</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="courses.php" class="nav-link">
-                    <i class="fas fa-book"></i>
-                    <span>Formations</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="products.php" class="nav-link">
-                    <i class="fas fa-box"></i>
-                    <span>Produits</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="orders.php" class="nav-link">
-                    <i class="fas fa-shopping-cart"></i>
-                    <span>Commandes</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="events.php" class="nav-link">
-                    <i class="fas fa-calendar-alt"></i>
-                    <span>Événements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="contact_messages.php" class="nav-link">
-                    <i class="fas fa-envelope"></i>
-                    <span>Messages</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="transactions.php" class="nav-link">
-                    <i class="fas fa-exchange-alt"></i>
-                    <span>Transactions</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payout_requests.php" class="nav-link active">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <span>Demandes de paiement</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="earnings.php" class="nav-link">
-                    <i class="fas fa-wallet"></i>
-                    <span>Revenus</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payments.php" class="nav-link">
-                    <i class="fas fa-money-bill-wave"></i>
-                    <span>Paiements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payment_stats.php" class="nav-link">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Statistiques</span>
-                </a>
-            </div>
-            
-            <div class="nav-item" style="margin-top: 2rem;">
-                <a href="../auth/logout.php" class="nav-link">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </nav>
-    </div>
+    <?php include 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->
     <div class="main-content">
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1 class="page-title">Demandes de Paiement</h1>
-                
-                <div class="header-actions">
-                    <div class="user-menu">
-                        <div class="user-avatar">
-                            <i class="fas fa-user"></i>
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div class="page-title">
+                        <h1><i class="fas fa-hand-holding-usd"></i> <?= __('payout_requests') ?></h1>
+                        <p><?= __('manage_payout_requests') ?></p>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 20px;">
+                        <!-- Language Switcher -->
+                        <div class="admin-language-switcher">
+                            <div class="admin-language-dropdown">
+                                <button class="admin-language-btn" onclick="toggleAdminLanguageDropdown()">
+                                    <i class="fas fa-globe"></i>
+                                    <span><?= getCurrentLanguage() == 'fr' ? 'Français' : 'English' ?></span>
+                                    <i class="fas fa-chevron-down"></i>
+                                </button>
+
+                                <div class="admin-language-menu" id="adminLanguageDropdown">
+                                    <a href="?lang=fr" class="admin-language-item <?= getCurrentLanguage() == 'fr' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇫🇷</span>
+                                        <span class="language-name">Français</span>
+                                        <?php if (getCurrentLanguage() == 'fr'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                    <a href="?lang=en" class="admin-language-item <?= getCurrentLanguage() == 'en' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇬🇧</span>
+                                        <span class="language-name">English</span>
+                                        <?php if (getCurrentLanguage() == 'en'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div style="font-weight: 600; font-size: 0.875rem;">Administrateur</div>
-                            <div style="font-size: 0.75rem; opacity: 0.7;">Admin Panel</div>
+
+                        <!-- User Menu -->
+                        <div class="user-menu">
+                            <div class="user-avatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.875rem;"><?= htmlspecialchars($current_user['full_name'] ?? __('administrator')) ?></div>
+                                <div style="font-size: 0.75rem; opacity: 0.7;"><?= __('admin_panel') ?></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -300,53 +541,53 @@ try {
             <div class="search-filters">
                 <form method="GET" class="filters-row">
                     <div class="filter-group">
-                        <label class="form-label">Rechercher</label>
-                        <input type="text" name="search" class="form-control" 
-                               placeholder="Utilisateur, ID ou notes..." 
-                               value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                        <label class="form-label"><?= __('search') ?></label>
+                        <input type="text" name="search" class="form-control"
+                            placeholder="<?= __('search_payout_placeholder') ?>"
+                            value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
                     </div>
-                    
+
                     <div class="filter-group">
-                        <label class="form-label">Statut</label>
+                        <label class="form-label"><?= __('status') ?></label>
                         <select name="status" class="form-control">
-                            <option value="">Tous les statuts</option>
-                            <option value="pending" <?= ($_GET['status'] ?? '') === 'pending' ? 'selected' : '' ?>>En attente</option>
-                            <option value="approved" <?= ($_GET['status'] ?? '') === 'approved' ? 'selected' : '' ?>>Approuvé</option>
-                            <option value="rejected" <?= ($_GET['status'] ?? '') === 'rejected' ? 'selected' : '' ?>>Rejeté</option>
-                            <option value="paid" <?= ($_GET['status'] ?? '') === 'paid' ? 'selected' : '' ?>>Payé</option>
+                            <option value=""><?= __('all_statuses') ?></option>
+                            <option value="pending" <?= ($_GET['status'] ?? '') === 'pending' ? 'selected' : '' ?>><?= __('pending') ?></option>
+                            <option value="approved" <?= ($_GET['status'] ?? '') === 'approved' ? 'selected' : '' ?>><?= __('approved') ?></option>
+                            <option value="rejected" <?= ($_GET['status'] ?? '') === 'rejected' ? 'selected' : '' ?>><?= __('rejected') ?></option>
+                            <option value="paid" <?= ($_GET['status'] ?? '') === 'paid' ? 'selected' : '' ?>><?= __('paid') ?></option>
                         </select>
                     </div>
-                    
+
                     <div class="filter-group">
-                        <label class="form-label">Rôle</label>
+                        <label class="form-label"><?= __('role') ?></label>
                         <select name="role" class="form-control">
-                            <option value="">Tous les rôles</option>
-                            <option value="instructor" <?= ($_GET['role'] ?? '') === 'instructor' ? 'selected' : '' ?>>Formateur</option>
-                            <option value="vendor" <?= ($_GET['role'] ?? '') === 'vendor' ? 'selected' : '' ?>>Vendeur</option>
+                            <option value=""><?= __('all_roles') ?></option>
+                            <option value="instructor" <?= ($_GET['role'] ?? '') === 'instructor' ? 'selected' : '' ?>><?= __('instructor') ?></option>
+                            <option value="vendor" <?= ($_GET['role'] ?? '') === 'vendor' ? 'selected' : '' ?>><?= __('vendor') ?></option>
                         </select>
                     </div>
-                    
+
                     <div class="filter-group">
-                        <label class="form-label">Date de début</label>
-                        <input type="date" name="date_from" class="form-control" 
-                               value="<?= htmlspecialchars($_GET['date_from'] ?? '') ?>">
+                        <label class="form-label"><?= __('date_from') ?></label>
+                        <input type="date" name="date_from" class="form-control"
+                            value="<?= htmlspecialchars($_GET['date_from'] ?? '') ?>">
                     </div>
-                    
+
                     <div class="filter-group">
-                        <label class="form-label">Date de fin</label>
-                        <input type="date" name="date_to" class="form-control" 
-                               value="<?= htmlspecialchars($_GET['date_to'] ?? '') ?>">
+                        <label class="form-label"><?= __('date_to') ?></label>
+                        <input type="date" name="date_to" class="form-control"
+                            value="<?= htmlspecialchars($_GET['date_to'] ?? '') ?>">
                     </div>
-                    
+
                     <div class="filter-group">
                         <label class="form-label">&nbsp;</label>
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-search"></i>
-                            Filtrer
+                            <?= __('filter') ?>
                         </button>
                         <a href="payout_requests.php" class="btn btn-secondary">
                             <i class="fas fa-times"></i>
-                            Réinitialiser
+                            <?= __('reset') ?>
                         </a>
                     </div>
                 </form>
@@ -361,11 +602,11 @@ try {
                         </div>
                         <div class="stat-info">
                             <div class="stat-value"><?= number_format($total_requests) ?></div>
-                            <div class="stat-label">Total Demandes</div>
+                            <div class="stat-label"><?= __('total_requests') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon success">
@@ -373,11 +614,11 @@ try {
                         </div>
                         <div class="stat-info">
                             <div class="stat-value">GHS<?= number_format($total_amount, 2) ?></div>
-                            <div class="stat-label">Montant Total</div>
+                            <div class="stat-label"><?= __('total_amount') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon users">
@@ -389,7 +630,7 @@ try {
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon students">
@@ -412,20 +653,20 @@ try {
                         <span class="badge badge-success">GHS<?= number_format($total_amount, 2) ?> total</span>
                     </div>
                 </div>
-                
+
                 <div class="table-container">
                     <table class="table">
                         <thead>
                             <tr>
-                                <th>ID</th>
-                                <th>Utilisateur</th>
-                                <th>Rôle</th>
-                                <th>Montant</th>
-                                <th>Statut</th>
-                                <th>Demandé le</th>
-                                <th>Payé le</th>
-                                <th>Notes</th>
-                                <th>Actions</th>
+                                <th><?= __('id') ?></th>
+                                <th><?= __('user') ?></th>
+                                <th><?= __('role') ?></th>
+                                <th><?= __('amount') ?></th>
+                                <th><?= __('status') ?></th>
+                                <th><?= __('requested_date') ?></th>
+                                <th><?= __('paid_date') ?></th>
+                                <th><?= __('notes') ?></th>
+                                <th><?= __('actions') ?></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -433,7 +674,7 @@ try {
                                 <tr>
                                     <td colspan="9" class="text-center" style="padding: 3rem;">
                                         <i class="fas fa-hand-holding-usd" style="font-size: 3rem; color: var(--text-light); margin-bottom: 1rem; display: block;"></i>
-                                        <p>Aucune demande trouvée</p>
+                                        <p><?= __('no_requests_found') ?></p>
                                     </td>
                                 </tr>
                             <?php else: ?>
@@ -460,12 +701,12 @@ try {
                                         <td>
                                             <?php
                                             $status_labels = [
-                                                'pending' => ['En attente', 'badge-warning'],
-                                                'approved' => ['Approuvé', 'badge-info'],
-                                                'rejected' => ['Rejeté', 'badge-danger'],
-                                                'paid' => ['Payé', 'badge-success']
+                                                'pending' => [__('pending'), 'badge-warning'],
+                                                'approved' => [__('approved'), 'badge-info'],
+                                                'rejected' => [__('rejected'), 'badge-danger'],
+                                                'paid' => [__('paid'), 'badge-success']
                                             ];
-                                            $status_info = $status_labels[$req['status']] ?? ['Inconnu', 'badge-secondary'];
+                                            $status_info = $status_labels[$req['status']] ?? [__('unknown'), 'badge-secondary'];
                                             ?>
                                             <span class="badge <?= $status_info[1] ?>"><?= $status_info[0] ?></span>
                                         </td>
@@ -499,19 +740,19 @@ try {
                                                 <div class="d-flex gap-1">
                                                     <form method="POST" style="display: inline;">
                                                         <input type="hidden" name="id" value="<?= $req['id'] ?>">
-                                                        <button type="submit" name="action" value="approved" 
-                                                                class="btn btn-sm btn-success" 
-                                                                title="Approuver"
-                                                                onclick="return confirm('Êtes-vous sûr de vouloir approuver cette demande ?')">
+                                                        <button type="submit" name="action" value="approved"
+                                                            class="btn btn-sm btn-success"
+                                                            title="<?= __('approve') ?>"
+                                                            onclick="return confirm('<?= __('confirm_approve_request') ?>')">
                                                             <i class="fas fa-check"></i>
                                                         </button>
                                                     </form>
                                                     <form method="POST" style="display: inline;">
                                                         <input type="hidden" name="id" value="<?= $req['id'] ?>">
-                                                        <button type="submit" name="action" value="rejected" 
-                                                                class="btn btn-sm btn-danger" 
-                                                                title="Rejeter"
-                                                                onclick="return confirm('Êtes-vous sûr de vouloir rejeter cette demande ?')">
+                                                        <button type="submit" name="action" value="rejected"
+                                                            class="btn btn-sm btn-danger"
+                                                            title="<?= __('reject') ?>"
+                                                            onclick="return confirm('<?= __('confirm_reject_request') ?>')">
                                                             <i class="fas fa-times"></i>
                                                         </button>
                                                     </form>
@@ -519,10 +760,10 @@ try {
                                             <?php elseif ($req['status'] === 'approved'): ?>
                                                 <form method="POST" style="display: inline;">
                                                     <input type="hidden" name="id" value="<?= $req['id'] ?>">
-                                                    <button type="submit" name="action" value="paid" 
-                                                            class="btn btn-sm btn-primary" 
-                                                            title="Marquer comme payé"
-                                                            onclick="return confirm('Êtes-vous sûr de vouloir marquer cette demande comme payée ?')">
+                                                    <button type="submit" name="action" value="paid"
+                                                        class="btn btn-sm btn-primary"
+                                                        title="<?= __('mark_as_paid') ?>"
+                                                        onclick="return confirm('<?= __('confirm_mark_paid') ?>')">
                                                         <i class="fas fa-money-bill-wave"></i>
                                                     </button>
                                                 </form>
@@ -541,22 +782,22 @@ try {
                 <?php if ($total_pages > 1): ?>
                     <div class="pagination">
                         <?php if ($current_page > 1): ?>
-                            <a href="?page=<?= $current_page - 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&role=<?= htmlspecialchars($_GET['role'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" 
-                               class="btn btn-secondary">
+                            <a href="?page=<?= $current_page - 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&role=<?= htmlspecialchars($_GET['role'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>"
+                                class="btn btn-secondary">
                                 <i class="fas fa-chevron-left"></i>
                             </a>
                         <?php endif; ?>
-                        
+
                         <?php for ($i = max(1, $current_page - 2); $i <= min($total_pages, $current_page + 2); $i++): ?>
-                            <a href="?page=<?= $i ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&role=<?= htmlspecialchars($_GET['role'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" 
-                               class="btn <?= $i === $current_page ? 'btn-primary active' : 'btn-secondary' ?>">
+                            <a href="?page=<?= $i ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&role=<?= htmlspecialchars($_GET['role'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>"
+                                class="btn <?= $i === $current_page ? 'btn-primary active' : 'btn-secondary' ?>">
                                 <?= $i ?>
                             </a>
                         <?php endfor; ?>
-                        
+
                         <?php if ($current_page < $total_pages): ?>
-                            <a href="?page=<?= $current_page + 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&role=<?= htmlspecialchars($_GET['role'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" 
-                               class="btn btn-secondary">
+                            <a href="?page=<?= $current_page + 1 ?>&search=<?= htmlspecialchars($_GET['search'] ?? '') ?>&status=<?= htmlspecialchars($_GET['status'] ?? '') ?>&role=<?= htmlspecialchars($_GET['role'] ?? '') ?>&date_from=<?= htmlspecialchars($_GET['date_from'] ?? '') ?>&date_to=<?= htmlspecialchars($_GET['date_to'] ?? '') ?>"
+                                class="btn btn-secondary">
                                 <i class="fas fa-chevron-right"></i>
                             </a>
                         <?php endif; ?>
@@ -576,7 +817,7 @@ try {
                     this.style.transform = 'scale(1.01)';
                     this.style.boxShadow = 'var(--shadow-light)';
                 });
-                
+
                 row.addEventListener('mouseleave', function() {
                     this.style.transform = 'scale(1)';
                     this.style.boxShadow = 'none';
@@ -594,6 +835,105 @@ try {
                 });
             });
         });
+
+        // Hamburger menu functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const hamburgerMenu = document.getElementById('hamburgerMenu');
+            const sidebar = document.getElementById('sidebar');
+            const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+            function toggleSidebar() {
+                hamburgerMenu.classList.toggle('active');
+                sidebar.classList.toggle('active');
+                sidebarOverlay.classList.toggle('active');
+
+                if (sidebar.classList.contains('active')) {
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    document.body.style.overflow = '';
+                }
+            }
+
+            function closeSidebar() {
+                hamburgerMenu.classList.remove('active');
+                sidebar.classList.remove('active');
+                sidebarOverlay.classList.remove('active');
+                document.body.style.overflow = '';
+            }
+
+            if (hamburgerMenu) {
+                hamburgerMenu.addEventListener('click', toggleSidebar);
+            }
+
+            if (sidebarOverlay) {
+                sidebarOverlay.addEventListener('click', closeSidebar);
+            }
+
+            const navLinks = document.querySelectorAll('.nav-link');
+            navLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 768) {
+                        closeSidebar();
+                    }
+                });
+            });
+
+            window.addEventListener('resize', function() {
+                if (window.innerWidth > 768) {
+                    closeSidebar();
+                }
+            });
+
+            if (hamburgerMenu) {
+                hamburgerMenu.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleSidebar();
+                    }
+                });
+            }
+
+            // Enhanced payout management interactions
+            const payoutCards = document.querySelectorAll('.payout-card');
+            payoutCards.forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateY(-4px)';
+                });
+
+                card.addEventListener('mouseleave', function() {
+                    this.style.transform = 'translateY(0)';
+                });
+            });
+
+            // Status badge animations
+            const statusBadges = document.querySelectorAll('.payout-status');
+            statusBadges.forEach(badge => {
+                badge.addEventListener('mouseenter', function() {
+                    this.style.transform = 'scale(1.05)';
+                });
+
+                badge.addEventListener('mouseleave', function() {
+                    this.style.transform = 'scale(1)';
+                });
+            });
+        });
+
+        // Admin Language Switcher
+        function toggleAdminLanguageDropdown() {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            const button = document.querySelector('.admin-language-btn');
+
+            if (!button.contains(event.target) && !dropdown.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
     </script>
 </body>
+
 </html>

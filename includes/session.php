@@ -1,5 +1,8 @@
 <?php
-session_start();
+// Start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Initialize internationalization system
 require_once __DIR__ . '/i18n.php';
@@ -17,9 +20,10 @@ if (isset($_SESSION['user_id'])) {
         $stmt = $pdo->prepare("SELECT language_preference FROM users WHERE id = ?");
         $stmt->execute([$_SESSION['user_id']]);
         $user_lang = $stmt->fetchColumn();
-        
-        if ($user_lang && in_array($user_lang, ['fr', 'en'])) {
-            setLanguage($user_lang);
+
+        // Only set language from database if no session language is set
+        if ($user_lang && in_array($user_lang, ['fr', 'en']) && !isset($_SESSION['user_language'])) {
+            $_SESSION['user_language'] = $user_lang;
         }
     } catch (Exception $e) {
         // Silently fail if database is not available
@@ -27,7 +31,9 @@ if (isset($_SESSION['user_id'])) {
     }
 }
 
+// Initialize language system
+require_once __DIR__ . '/i18n.php';
+
 // Ce fichier se contente de vérifier que l'utilisateur est connecté.
 // Il NE fait PAS de redirection vers un rôle spécifique ici.
 // Chaque page décidera de son propre contrôle d'accès via has_role() ou require_role()
-?>

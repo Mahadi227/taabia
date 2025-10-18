@@ -1,8 +1,15 @@
 <?php
+// Start output buffering to prevent any accidental output
+ob_start();
+
+// Handle language switching first
+require_once 'language_handler.php';
+
+// Now load the session and other includes
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/function.php';
-
+require_once '../includes/i18n.php';
 require_role('admin');
 
 // Filter by month (e.g., 2025-07)
@@ -100,12 +107,13 @@ try {
 ?>
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Statistiques de Paiement | Admin | TaaBia</title>
-    
+    <title><?= __('payment_statistics') ?> | <?= __('admin_panel') ?> | TaaBia</title>
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <!-- Google Fonts -->
@@ -114,135 +122,149 @@ try {
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Admin Styles -->
     <link rel="stylesheet" href="admin-styles.css">
+
+    <style>
+        /* Admin Language Switcher Styles */
+        .admin-language-switcher {
+            position: relative;
+            display: inline-block;
+        }
+
+        .admin-language-dropdown {
+            position: relative;
+        }
+
+        .admin-language-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: var(--transition);
+            cursor: pointer;
+        }
+
+        .admin-language-btn:hover {
+            background: #f8f9fa;
+            border-color: var(--primary-color);
+        }
+
+        .admin-language-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-medium);
+            min-width: 160px;
+            z-index: 1000;
+            display: none;
+            overflow: hidden;
+        }
+
+        .admin-language-menu.show {
+            display: block;
+        }
+
+        .admin-language-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: var(--transition);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-language-item:last-child {
+            border-bottom: none;
+        }
+
+        .admin-language-item:hover {
+            background: #f8f9fa;
+        }
+
+        .admin-language-item.active {
+            background: var(--primary-light);
+            color: var(--primary-color);
+        }
+
+        .language-flag {
+            font-size: 1rem;
+        }
+
+        .language-name {
+            flex: 1;
+        }
+
+        .admin-language-item i {
+            color: var(--success-color);
+            font-size: 0.75rem;
+        }
+    </style>
 </head>
 
 <body>
     <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h2>TaaBia Admin</h2>
-            <p><?php
-                $current_user = null;
-                try {
-                    $stmt = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
-                    $stmt->execute([current_user_id()]);
-                    $current_user = $stmt->fetch();
-                } catch (PDOException $e) {
-                    error_log("Error fetching current user: " . $e->getMessage());
-                }
-                echo htmlspecialchars($current_user['full_name'] ?? 'Administrateur');
-            ?></p>
-        </div>
-        
-        <nav class="sidebar-nav">
-            <div class="nav-item">
-                <a href="index.php" class="nav-link">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Tableau de bord</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="users.php" class="nav-link">
-                    <i class="fas fa-users"></i>
-                    <span>Utilisateurs</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="courses.php" class="nav-link">
-                    <i class="fas fa-book"></i>
-                    <span>Formations</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="products.php" class="nav-link">
-                    <i class="fas fa-box"></i>
-                    <span>Produits</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="orders.php" class="nav-link">
-                    <i class="fas fa-shopping-cart"></i>
-                    <span>Commandes</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="events.php" class="nav-link">
-                    <i class="fas fa-calendar-alt"></i>
-                    <span>Événements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="contact_messages.php" class="nav-link">
-                    <i class="fas fa-envelope"></i>
-                    <span>Messages</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="transactions.php" class="nav-link">
-                    <i class="fas fa-exchange-alt"></i>
-                    <span>Transactions</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payout_requests.php" class="nav-link">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <span>Demandes de paiement</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="earnings.php" class="nav-link">
-                    <i class="fas fa-wallet"></i>
-                    <span>Revenus</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payments.php" class="nav-link">
-                    <i class="fas fa-money-bill-wave"></i>
-                    <span>Paiements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payment_stats.php" class="nav-link active">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Statistiques</span>
-                </a>
-            </div>
-            
-            <div class="nav-item" style="margin-top: 2rem;">
-                <a href="../auth/logout.php" class="nav-link">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </nav>
-    </div>
+    <?php include 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->
     <div class="main-content">
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1 class="page-title">Statistiques de Paiement</h1>
-                
-                <div class="header-actions">
-                    <div class="user-menu">
-                        <div class="user-avatar">
-                            <i class="fas fa-user"></i>
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div class="page-title">
+                        <h1><i class="fas fa-chart-bar"></i> <?= __('payment_statistics') ?></h1>
+                        <p><?= __('payment_analytics_dashboard') ?></p>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 20px;">
+                        <!-- Language Switcher -->
+                        <div class="admin-language-switcher">
+                            <div class="admin-language-dropdown">
+                                <button class="admin-language-btn" onclick="toggleAdminLanguageDropdown()">
+                                    <i class="fas fa-globe"></i>
+                                    <span><?= getCurrentLanguage() == 'fr' ? 'Français' : 'English' ?></span>
+                                    <i class="fas fa-chevron-down"></i>
+                                </button>
+
+                                <div class="admin-language-menu" id="adminLanguageDropdown">
+                                    <a href="?lang=fr" class="admin-language-item <?= getCurrentLanguage() == 'fr' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇫🇷</span>
+                                        <span class="language-name">Français</span>
+                                        <?php if (getCurrentLanguage() == 'fr'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                    <a href="?lang=en" class="admin-language-item <?= getCurrentLanguage() == 'en' ? 'active' : '' ?>">
+                                        <span class="language-flag">🇬🇧</span>
+                                        <span class="language-name">English</span>
+                                        <?php if (getCurrentLanguage() == 'en'): ?>
+                                            <i class="fas fa-check"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div style="font-weight: 600; font-size: 0.875rem;">Administrateur</div>
-                            <div style="font-size: 0.75rem; opacity: 0.7;">Admin Panel</div>
+
+                        <!-- User Menu -->
+                        <div class="user-menu">
+                            <div class="user-avatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.875rem;"><?= htmlspecialchars($current_user['full_name'] ?? __('administrator')) ?></div>
+                                <div style="font-size: 0.75rem; opacity: 0.7;"><?= __('admin_panel') ?></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -255,20 +277,20 @@ try {
             <div class="search-filters">
                 <form method="GET" class="filters-row">
                     <div class="filter-group">
-                        <label class="form-label">Filtrer par mois</label>
-                        <input type="month" name="month" class="form-control" 
-                               value="<?= htmlspecialchars($monthFilter) ?>">
+                        <label class="form-label"><?= __('filter_by_month') ?></label>
+                        <input type="month" name="month" class="form-control"
+                            value="<?= htmlspecialchars($monthFilter) ?>">
                     </div>
-                    
+
                     <div class="filter-group">
                         <label class="form-label">&nbsp;</label>
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-filter"></i>
-                            Appliquer
+                            <?= __('apply') ?>
                         </button>
                         <a href="payment_stats.php" class="btn btn-secondary">
                             <i class="fas fa-times"></i>
-                            Réinitialiser
+                            <?= __('reset') ?>
                         </a>
                     </div>
                 </form>
@@ -283,11 +305,11 @@ try {
                         </div>
                         <div class="stat-info">
                             <div class="stat-value">GHS<?= number_format($totalRevenue, 2) ?></div>
-                            <div class="stat-label">Chiffre d'affaires</div>
+                            <div class="stat-label"><?= __('total_revenue') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon success">
@@ -295,11 +317,11 @@ try {
                         </div>
                         <div class="stat-info">
                             <div class="stat-value">GHS<?= number_format($totalPaid, 2) ?></div>
-                            <div class="stat-label">Payé aux instructeurs</div>
+                            <div class="stat-label"><?= __('paid_to_instructors') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon users">
@@ -307,11 +329,11 @@ try {
                         </div>
                         <div class="stat-info">
                             <div class="stat-value">GHS<?= number_format($pendingBalance, 2) ?></div>
-                            <div class="stat-label">Solde en attente</div>
+                            <div class="stat-label"><?= __('pending_balance') ?></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon students">
@@ -319,7 +341,7 @@ try {
                         </div>
                         <div class="stat-info">
                             <div class="stat-value"><?= number_format($totalTransactions) ?></div>
-                            <div class="stat-label">Total Transactions</div>
+                            <div class="stat-label"><?= __('total_transactions') ?></div>
                         </div>
                     </div>
                 </div>
@@ -328,13 +350,13 @@ try {
             <!-- Charts Section -->
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">Évolution du Chiffre d'Affaires</h3>
+                    <h3 class="card-title"><?= __('revenue_evolution') ?></h3>
                     <div class="d-flex gap-2">
-                        <span class="badge badge-primary"><?= count($monthlyData) ?> mois</span>
-                        <span class="badge badge-success">GHS<?= number_format($averageTransaction, 2) ?> moyenne</span>
+                        <span class="badge badge-primary"><?= count($monthlyData) ?> <?= __('months') ?></span>
+                        <span class="badge badge-success">GHS<?= number_format($averageTransaction, 2) ?> <?= __('average') ?></span>
                     </div>
                 </div>
-                
+
                 <div style="padding: var(--spacing-lg);">
                     <canvas id="revenueChart" width="600" height="300"></canvas>
                 </div>
@@ -343,32 +365,32 @@ try {
             <!-- Top Instructors -->
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">🏆 Top Instructeurs du Mois</h3>
+                    <h3 class="card-title">🏆 <?= __('top_instructors_month') ?></h3>
                     <div class="d-flex gap-2">
-                        <span class="badge badge-primary"><?= count($topInstructors) ?> instructeurs</span>
+                        <span class="badge badge-primary"><?= count($topInstructors) ?> <?= __('instructors') ?></span>
                     </div>
                 </div>
-                
+
                 <div class="table-container">
                     <?php if (empty($topInstructors)): ?>
                         <div class="text-center" style="padding: 3rem;">
                             <i class="fas fa-trophy" style="font-size: 3rem; color: var(--text-light); margin-bottom: 1rem; display: block;"></i>
-                            <p>Aucun instructeur trouvé ce mois.</p>
+                            <p><?= __('no_instructors_found_month') ?></p>
                         </div>
                     <?php else: ?>
                         <table class="table">
                             <thead>
                                 <tr>
-                                    <th>Rang</th>
-                                    <th>Nom</th>
-                                    <th>Montant gagné</th>
-                                    <th>Pourcentage</th>
+                                    <th><?= __('rank') ?></th>
+                                    <th><?= __('name') ?></th>
+                                    <th><?= __('amount_earned') ?></th>
+                                    <th><?= __('percentage') ?></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php 
+                                <?php
                                 $totalEarned = array_sum(array_column($topInstructors, 'total_earned'));
-                                foreach ($topInstructors as $index => $ins): 
+                                foreach ($topInstructors as $index => $ins):
                                     $percentage = $totalEarned > 0 ? ($ins['total_earned'] / $totalEarned) * 100 : 0;
                                 ?>
                                     <tr>
@@ -403,21 +425,21 @@ try {
                 <div class="card-header">
                     <h3 class="card-title">📤 Exporter les Statistiques</h3>
                 </div>
-                
+
                 <div style="padding: var(--spacing-lg);">
                     <div class="d-flex gap-2 flex-wrap">
-                        <a href="export_payment_stats_pdf.php?month=<?= urlencode($monthFilter) ?>" 
-                           class="btn btn-primary" target="_blank">
+                        <a href="export_payment_stats_pdf.php?month=<?= urlencode($monthFilter) ?>"
+                            class="btn btn-primary" target="_blank">
                             <i class="fas fa-file-pdf"></i>
                             Exporter en PDF
                         </a>
-                        <a href="export_payment_stats_excel.php?month=<?= urlencode($monthFilter) ?>" 
-                           class="btn btn-success" target="_blank">
+                        <a href="export_payment_stats_excel.php?month=<?= urlencode($monthFilter) ?>"
+                            class="btn btn-success" target="_blank">
                             <i class="fas fa-file-excel"></i>
                             Exporter en Excel
                         </a>
-                        <a href="export_stats_pdf.php?month=<?= urlencode($monthFilter) ?>" 
-                           class="btn btn-info" target="_blank">
+                        <a href="export_stats_pdf.php?month=<?= urlencode($monthFilter) ?>"
+                            class="btn btn-info" target="_blank">
                             <i class="fas fa-chart-bar"></i>
                             Rapport Complet
                         </a>
@@ -515,7 +537,7 @@ try {
                     this.style.transform = 'scale(1.01)';
                     this.style.boxShadow = 'var(--shadow-light)';
                 });
-                
+
                 row.addEventListener('mouseleave', function() {
                     this.style.transform = 'scale(1)';
                     this.style.boxShadow = 'none';
@@ -533,6 +555,23 @@ try {
                 });
             });
         });
+
+        // Admin Language Switcher
+        function toggleAdminLanguageDropdown() {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            const button = document.querySelector('.admin-language-btn');
+
+            if (!button.contains(event.target) && !dropdown.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
     </script>
 </body>
+
 </html>

@@ -2,9 +2,9 @@
 
 :root {
     /* Color Palette */
-    --primary-color: #2563eb;
-    --primary-dark: #1d4ed8;
-    --primary-light: #3b82f6;
+    --primary-color: #004075;
+    --primary-dark: #004085;
+    --primary-light: #004082;
     --secondary-color: #10b981;
     --accent-color: #f59e0b;
     --success-color: #059669;
@@ -93,7 +93,7 @@ body {
 /* Sidebar */
 .student-sidebar {
     width: 280px;
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+    background: linear-gradient(135deg, #004075 0%, #004082 100%);
     color: var(--white);
     padding: var(--spacing-6);
     position: fixed;

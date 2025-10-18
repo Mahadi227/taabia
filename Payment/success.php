@@ -25,11 +25,11 @@ try {
     // Verify payment
     $processor = new PaymentProcessor($pdo);
     $verification = $processor->verifyPayment($payment_id, $gateway, $reference);
-    
+
     if ($verification['success']) {
         // Update payment status
         $processor->updatePaymentStatus($payment_id, 'completed', $verification['gateway_data']);
-        
+
         // Get payment details
         $stmt = $pdo->prepare("
             SELECT p.*, o.*, c.title as course_title 
@@ -40,20 +40,56 @@ try {
         ");
         $stmt->execute([$payment_id]);
         $payment = $stmt->fetch();
-        
+
         $success = true;
         $message = "Paiement effectué avec succès !";
-        
+
         // If it's a course purchase, enroll the student
-        if ($payment && $payment['course_title']) {
+        if ($payment && isset($_SESSION['pending_course_enrollment'])) {
+            $enrollment_data = $_SESSION['pending_course_enrollment'];
+            $enroll_course_id = $enrollment_data['course_id'];
+            $enroll_course_title = $enrollment_data['course_title'];
+
+            // Enroll student in the course
+            try {
+                // Try multiple insert methods
+                $enrolled = false;
+                $insert_queries = [
+                    "INSERT INTO student_courses (student_id, course_id, enrolled_at) VALUES (?, ?, NOW())",
+                    "INSERT INTO student_courses (student_id, course_id, created_at) VALUES (?, ?, NOW())",
+                    "INSERT INTO student_courses (student_id, course_id) VALUES (?, ?)"
+                ];
+
+                foreach ($insert_queries as $query) {
+                    try {
+                        $stmt_enroll = $pdo->prepare($query);
+                        $stmt_enroll->execute([$user_id, $enroll_course_id]);
+                        $enrolled = true;
+                        error_log("Student $user_id enrolled in course $enroll_course_id after payment");
+                        break;
+                    } catch (PDOException $e) {
+                        continue;
+                    }
+                }
+
+                if ($enrolled) {
+                    $course_message = "Vous êtes maintenant inscrit au cours : " . $enroll_course_title;
+                    unset($_SESSION['pending_course_enrollment']);
+                } else {
+                    error_log("Failed to enroll student after payment - manual enrollment needed");
+                    $course_message = "Paiement réussi. Votre inscription sera finalisée sous peu.";
+                }
+            } catch (PDOException $e) {
+                error_log("Error enrolling after payment: " . $e->getMessage());
+                $course_message = "Paiement réussi. Contactez le support pour finaliser votre inscription.";
+            }
+        } elseif ($payment && $payment['course_title']) {
             $course_message = "Vous êtes maintenant inscrit au cours : " . $payment['course_title'];
         }
-        
     } else {
         $success = false;
         $message = "Erreur lors de la vérification du paiement.";
     }
-    
 } catch (Exception $e) {
     error_log("Payment verification error: " . $e->getMessage());
     $success = false;
@@ -63,6 +99,7 @@ try {
 
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -200,6 +237,7 @@ try {
                 opacity: 0;
                 transform: translateY(20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -217,15 +255,15 @@ try {
         <div class="payment-icon <?= $success ? 'success' : 'error' ?>">
             <i class="fas fa-<?= $success ? 'check-circle' : 'exclamation-triangle' ?>"></i>
         </div>
-        
+
         <h1 class="payment-title">
             <?= $success ? 'Paiement réussi !' : 'Erreur de paiement' ?>
         </h1>
-        
+
         <p class="payment-message">
             <?= htmlspecialchars($message) ?>
         </p>
-        
+
         <?php if ($success && isset($payment)): ?>
             <div class="payment-details">
                 <div class="payment-detail">
@@ -245,7 +283,7 @@ try {
                     <span><?= date('d/m/Y H:i', strtotime($payment['created_at'])) ?></span>
                 </div>
             </div>
-            
+
             <?php if (isset($course_message)): ?>
                 <div class="course-message">
                     <i class="fas fa-graduation-cap"></i>
@@ -253,7 +291,7 @@ try {
                 </div>
             <?php endif; ?>
         <?php endif; ?>
-        
+
         <div>
             <?php if ($success): ?>
                 <a href="../student/my_courses.php" class="btn btn-primary">
@@ -261,7 +299,7 @@ try {
                     Voir mes cours
                 </a>
             <?php endif; ?>
-            
+
             <a href="../student/orders.php" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i>
                 Retour aux commandes
@@ -276,4 +314,5 @@ try {
         }, 10000);
     </script>
 </body>
+
 </html>

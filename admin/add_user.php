@@ -1,4 +1,11 @@
-<?php
+a<?php
+// Start output buffering to prevent any accidental output
+ob_start();
+
+// Handle language switching first
+require_once 'language_handler.php';
+
+// Now load the session and other includes
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/function.php';
@@ -19,21 +26,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Validation
     if (empty($full_name)) {
-        $error_message = "Le nom complet est obligatoire.";
+        $error_message = __("full_name_required");
     } elseif (empty($email)) {
-        $error_message = "L'email est obligatoire.";
+        $error_message = __("email_required");
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error_message = "L'email n'est pas valide.";
+        $error_message = __("email_invalid");
     } elseif (empty($password)) {
-        $error_message = "Le mot de passe est obligatoire.";
+        $error_message = __("password_required");
     } elseif (strlen($password) < 6) {
-        $error_message = "Le mot de passe doit contenir au moins 6 caractères.";
+        $error_message = __("password_min_length");
     } else {
         // Check if email already exists
         $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
         $stmt->execute([$email]);
         if ($stmt->fetch()) {
-            $error_message = "Cet email est déjà utilisé.";
+            $error_message = __("email_already_exists");
         } else {
             // Insert user
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
@@ -41,15 +48,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 INSERT INTO users (full_name, email, password, role, phone, address, is_active, created_at) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
             ");
-            
+
             if ($stmt->execute([$full_name, $email, $hashed_password, $role, $phone, $address, $is_active])) {
-                $success_message = "Utilisateur créé avec succès !";
+                $success_message = __("user_created_successfully");
                 // Clear form data
                 $full_name = $email = $phone = $address = '';
                 $role = 'student';
                 $is_active = 1;
             } else {
-                $error_message = "Erreur lors de la création de l'utilisateur.";
+                $error_message = __("error_creating_user");
             }
         }
     }
@@ -57,103 +64,111 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ?>
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ajouter un utilisateur | Admin | TaaBia</title>
-    
+    <title><?= __('add_user_title') ?> | <?= __('admin_panel') ?> | TaaBia</title>
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Admin Styles -->
     <link rel="stylesheet" href="admin-styles.css">
+
+    <style>
+        /* Admin Language Switcher */
+        .admin-language-switcher {
+            position: relative;
+            display: inline-block;
+        }
+
+        .admin-language-dropdown {
+            position: relative;
+        }
+
+        .admin-language-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-primary);
+            transition: var(--transition);
+        }
+
+        .admin-language-btn:hover {
+            background: var(--bg-secondary);
+            border-color: var(--primary-color);
+        }
+
+        .admin-language-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-sm);
+            box-shadow: var(--shadow-medium);
+            min-width: 150px;
+            z-index: 1000;
+            display: none;
+            margin-top: 4px;
+        }
+
+        .admin-language-menu.show {
+            display: block;
+        }
+
+        .admin-language-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            text-decoration: none;
+            color: var(--text-primary);
+            transition: var(--transition);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-language-item:last-child {
+            border-bottom: none;
+        }
+
+        .admin-language-item:hover {
+            background: var(--bg-secondary);
+        }
+
+        .admin-language-item.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .language-flag {
+            font-size: 16px;
+        }
+
+        .language-name {
+            flex: 1;
+            font-size: 14px;
+        }
+
+        .admin-language-item i {
+            font-size: 12px;
+            margin-left: auto;
+        }
+    </style>
 </head>
 
 <body>
     <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h2>TaaBia Admin</h2>
-            <p><?php
-                $current_user = null;
-                try {
-                    $stmt = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
-                    $stmt->execute([current_user_id()]);
-                    $current_user = $stmt->fetch();
-                } catch (PDOException $e) {
-                    error_log("Error fetching current user: " . $e->getMessage());
-                }
-                echo htmlspecialchars($current_user['full_name'] ?? 'Administrateur');
-            ?></p>
-        </div>
-        
-        <nav class="sidebar-nav">
-            <div class="nav-item">
-                <a href="index.php" class="nav-link">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Tableau de bord</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="users.php" class="nav-link active">
-                    <i class="fas fa-users"></i>
-                    <span>Utilisateurs</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="courses.php" class="nav-link">
-                    <i class="fas fa-book"></i>
-                    <span>Formations</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="products.php" class="nav-link">
-                    <i class="fas fa-shopping-cart"></i>
-                    <span>Produits</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="events.php" class="nav-link">
-                    <i class="fas fa-calendar-alt"></i>
-                    <span>Événements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="blog_posts.php" class="nav-link">
-                    <i class="fas fa-blog"></i>
-                    <span>Blog</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="orders.php" class="nav-link">
-                    <i class="fas fa-shopping-bag"></i>
-                    <span>Commandes</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="payments.php" class="nav-link">
-                    <i class="fas fa-credit-card"></i>
-                    <span>Paiements</span>
-                </a>
-            </div>
-            
-            <div class="nav-item">
-                <a href="contact_messages.php" class="nav-link">
-                    <i class="fas fa-envelope"></i>
-                    <span>Messages</span>
-                </a>
-            </div>
-        </nav>
-    </div>
+    <?php include 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->
     <div class="main-content">
@@ -161,14 +176,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <header class="header">
             <div class="header-content">
                 <div class="header-left">
-                    <h1>Ajouter un utilisateur</h1>
-                    <p>Créer un nouveau compte utilisateur</p>
+                    <h1><?= __('add_user_title') ?></h1>
+                    <p><?= __('add_user_description') ?></p>
                 </div>
-                
-                <div class="header-right">
+
+                <div class="header-right" style="display: flex; align-items: center; gap: 20px;">
+                    <!-- Language Switcher -->
+                    <div class="admin-language-switcher">
+                        <div class="admin-language-dropdown">
+                            <button class="admin-language-btn" onclick="toggleAdminLanguageDropdown()">
+                                <i class="fas fa-globe"></i>
+                                <span><?= getCurrentLanguage() == 'fr' ? 'Français' : 'English' ?></span>
+                                <i class="fas fa-chevron-down"></i>
+                            </button>
+
+                            <div class="admin-language-menu" id="adminLanguageDropdown">
+                                <a href="?lang=fr" class="admin-language-item <?= getCurrentLanguage() == 'fr' ? 'active' : '' ?>">
+                                    <span class="language-flag">🇫🇷</span>
+                                    <span class="language-name">Français</span>
+                                    <?php if (getCurrentLanguage() == 'fr'): ?>
+                                        <i class="fas fa-check"></i>
+                                    <?php endif; ?>
+                                </a>
+                                <a href="?lang=en" class="admin-language-item <?= getCurrentLanguage() == 'en' ? 'active' : '' ?>">
+                                    <span class="language-flag">🇬🇧</span>
+                                    <span class="language-name">English</span>
+                                    <?php if (getCurrentLanguage() == 'en'): ?>
+                                        <i class="fas fa-check"></i>
+                                    <?php endif; ?>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
                     <a href="users.php" class="btn btn-secondary">
                         <i class="fas fa-arrow-left"></i>
-                        Retour à la liste
+                        <?= __('back_to_list') ?>
                     </a>
                 </div>
             </div>
@@ -178,9 +221,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="content">
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">Informations de l'utilisateur</h3>
+                    <h3 class="card-title"><?= __('user_information') ?></h3>
                 </div>
-                
+
                 <div class="card-body">
                     <?php if ($success_message): ?>
                         <div class="alert alert-success">
@@ -188,81 +231,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <?= htmlspecialchars($success_message) ?>
                         </div>
                     <?php endif; ?>
-                    
+
                     <?php if ($error_message): ?>
                         <div class="alert alert-danger">
                             <i class="fas fa-exclamation-circle"></i>
                             <?= htmlspecialchars($error_message) ?>
                         </div>
                     <?php endif; ?>
-                    
+
                     <form method="POST" class="form">
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="full_name" class="form-label">Nom complet *</label>
-                                <input type="text" id="full_name" name="full_name" class="form-control" 
-                                       value="<?= htmlspecialchars($full_name ?? '') ?>" required>
+                                <label for="full_name" class="form-label"><?= __('full_name') ?> *</label>
+                                <input type="text" id="full_name" name="full_name" class="form-control"
+                                    value="<?= htmlspecialchars($full_name ?? '') ?>" required>
                             </div>
-                            
+
                             <div class="form-group">
-                                <label for="email" class="form-label">Email *</label>
-                                <input type="email" id="email" name="email" class="form-control" 
-                                       value="<?= htmlspecialchars($email ?? '') ?>" required>
+                                <label for="email" class="form-label"><?= __('email') ?> *</label>
+                                <input type="email" id="email" name="email" class="form-control"
+                                    value="<?= htmlspecialchars($email ?? '') ?>" required>
                             </div>
                         </div>
-                        
+
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="password" class="form-label">Mot de passe *</label>
+                                <label for="password" class="form-label"><?= __('password') ?> *</label>
                                 <input type="password" id="password" name="password" class="form-control" required>
-                                <small class="form-text">Minimum 6 caractères</small>
+                                <small class="form-text"><?= __('minimum_characters') ?></small>
                             </div>
-                            
+
                             <div class="form-group">
-                                <label for="role" class="form-label">Rôle *</label>
+                                <label for="role" class="form-label"><?= __('role') ?> *</label>
                                 <select id="role" name="role" class="form-control" required>
-                                    <option value="student" <?= ($role ?? '') === 'student' ? 'selected' : '' ?>>Étudiant</option>
-                                    <option value="instructor" <?= ($role ?? '') === 'instructor' ? 'selected' : '' ?>>Instructeur</option>
-                                    <option value="vendor" <?= ($role ?? '') === 'vendor' ? 'selected' : '' ?>>Vendeur</option>
-                                    <option value="admin" <?= ($role ?? '') === 'admin' ? 'selected' : '' ?>>Administrateur</option>
+                                    <option value="student" <?= ($role ?? '') === 'student' ? 'selected' : '' ?>><?= __('student') ?></option>
+                                    <option value="instructor" <?= ($role ?? '') === 'instructor' ? 'selected' : '' ?>><?= __('instructor') ?></option>
+                                    <option value="vendor" <?= ($role ?? '') === 'vendor' ? 'selected' : '' ?>><?= __('vendor') ?></option>
+                                    <option value="admin" <?= ($role ?? '') === 'admin' ? 'selected' : '' ?>><?= __('admin') ?></option>
                                 </select>
                             </div>
                         </div>
-                        
+
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="phone" class="form-label">Téléphone</label>
-                                <input type="tel" id="phone" name="phone" class="form-control" 
-                                       value="<?= htmlspecialchars($phone ?? '') ?>">
+                                <label for="phone" class="form-label"><?= __('phone') ?></label>
+                                <input type="tel" id="phone" name="phone" class="form-control"
+                                    value="<?= htmlspecialchars($phone ?? '') ?>">
                             </div>
-                            
+
                             <div class="form-group">
-                                <label for="is_active" class="form-label">Statut</label>
+                                <label for="is_active" class="form-label"><?= __('status') ?></label>
                                 <div class="checkbox-group">
                                     <label class="checkbox-label">
-                                        <input type="checkbox" id="is_active" name="is_active" 
-                                               <?= ($is_active ?? 1) == 1 ? 'checked' : '' ?>>
+                                        <input type="checkbox" id="is_active" name="is_active"
+                                            <?= ($is_active ?? 1) == 1 ? 'checked' : '' ?>>
                                         <span class="checkmark"></span>
-                                        Utilisateur actif
+                                        <?= __('user_active') ?>
                                     </label>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="form-group">
-                            <label for="address" class="form-label">Adresse</label>
+                            <label for="address" class="form-label"><?= __('address') ?></label>
                             <textarea id="address" name="address" class="form-control" rows="3"><?= htmlspecialchars($address ?? '') ?></textarea>
                         </div>
-                        
+
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-save"></i>
-                                Créer l'utilisateur
+                                <?= __('create_user') ?>
                             </button>
-                            
+
                             <a href="users.php" class="btn btn-secondary">
                                 <i class="fas fa-times"></i>
-                                Annuler
+                                <?= __('cancel') ?>
                             </a>
                         </div>
                     </form>
@@ -272,6 +315,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script>
+        // Admin Language Switcher
+        function toggleAdminLanguageDropdown() {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        // Close admin language dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('adminLanguageDropdown');
+            const switcher = document.querySelector('.admin-language-switcher');
+
+            if (switcher && !switcher.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
+
         // Add smooth interactions
         document.addEventListener('DOMContentLoaded', function() {
             // Add click effects to buttons
@@ -287,4 +346,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         });
     </script>
 </body>
-</html> 
+
+</html>

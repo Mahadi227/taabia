@@ -1,586 +1,1085 @@
 <?php
+
+/**
+ * Transactions Management Page
+ * Professional LMS Interface - Consistent Design
+ */
+
+// ============================================================================
+// INITIALIZATION & SECURITY
+// ============================================================================
+
+ob_start();
+require_once '../includes/language_handler.php';
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/function.php';
+require_once '../includes/i18n.php';
+
 require_role('instructor');
-
 $instructor_id = $_SESSION['user_id'];
-$search = $_GET['search'] ?? '';
-$filter_month = $_GET['month'] ?? date('Y-m');
-$filter_year = $_GET['year'] ?? date('Y');
-$filter_status = $_GET['status'] ?? '';
-$filter_type = $_GET['type'] ?? '';
-$sort_by = $_GET['sort'] ?? 'recent';
 
-try {
-    // Get instructor's courses for filter
-    $stmt = $pdo->prepare("SELECT id, title FROM courses WHERE instructor_id = ? ORDER BY title");
-    $stmt->execute([$instructor_id]);
-    $courses = $stmt->fetchAll();
+// ============================================================================
+// DATA PROCESSING
+// ============================================================================
 
-    // Build query with filters
-    $where_conditions = ["c.instructor_id = ?"];
-    $params = [$instructor_id];
+/**
+ * Transaction Analytics Engine
+ */
+class TransactionAnalytics
+{
+    private $pdo;
+    private $instructor_id;
 
-    if ($search) {
-        $where_conditions[] = "(s.full_name LIKE ? OR c.title LIKE ? OR o.id LIKE ?)";
-        $params[] = "%$search%";
-        $params[] = "%$search%";
-        $params[] = "%$search%";
+    public function __construct($pdo, $instructor_id)
+    {
+        $this->pdo = $pdo;
+        $this->instructor_id = $instructor_id;
     }
 
-    if ($filter_month && $filter_month !== 'all') {
-        $where_conditions[] = "DATE_FORMAT(o.ordered_at, '%Y-%m') = ?";
-        $params[] = $filter_month;
+    public function getOverviewStats()
+    {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT 
+                    COUNT(DISTINCT o.id) as total_orders,
+                    SUM(oi.price * oi.quantity) as total_revenue,
+                    COUNT(DISTINCT o.buyer_id) as unique_customers,
+                    AVG(oi.price * oi.quantity) as avg_order_value,
+                    COUNT(CASE WHEN o.status = 'completed' THEN 1 END) as completed_orders,
+                    COUNT(CASE WHEN o.status = 'pending' THEN 1 END) as pending_orders,
+                    COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) as cancelled_orders,
+                    COUNT(CASE WHEN o.status = 'refunded' THEN 1 END) as refunded_orders
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                LEFT JOIN courses c ON oi.course_id = c.id
+                WHERE c.instructor_id = ? OR oi.course_id IN (SELECT id FROM courses WHERE instructor_id = ?)
+            ");
+            $stmt->execute([$this->instructor_id, $this->instructor_id]);
+            return $stmt->fetch() ?: [];
+        } catch (PDOException $e) {
+            error_log("Analytics Error: " . $e->getMessage());
+            return [
+                'total_orders' => 0,
+                'total_revenue' => 0,
+                'unique_customers' => 0,
+                'avg_order_value' => 0,
+                'completed_orders' => 0,
+                'pending_orders' => 0,
+                'cancelled_orders' => 0,
+                'refunded_orders' => 0
+            ];
+        }
     }
 
-    if ($filter_status) {
-        $where_conditions[] = "o.status = ?";
-        $params[] = $filter_status;
+    public function getRevenueData($months = 12)
+    {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT 
+                    DATE_FORMAT(o.ordered_at, '%Y-%m') as month,
+                    SUM(oi.price * oi.quantity) as revenue,
+                    COUNT(DISTINCT o.id) as orders
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                LEFT JOIN courses c ON oi.course_id = c.id
+                WHERE (c.instructor_id = ? OR oi.course_id IN (SELECT id FROM courses WHERE instructor_id = ?))
+                AND o.status = 'completed'
+                AND o.ordered_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+                GROUP BY DATE_FORMAT(o.ordered_at, '%Y-%m')
+                ORDER BY month ASC
+                LIMIT ?
+            ");
+            $stmt->execute([$this->instructor_id, $this->instructor_id, $months, $months]);
+            return $stmt->fetchAll();
+        } catch (PDOException $e) {
+            return [];
+        }
     }
-
-    if ($filter_type) {
-        $where_conditions[] = "oi.type = ?";
-        $params[] = $filter_type;
-    }
-
-    $where_clause = implode(" AND ", $where_conditions);
-
-    // Determine sort order
-    $order_by = match($sort_by) {
-        'recent' => 'o.ordered_at DESC',
-        'oldest' => 'o.ordered_at ASC',
-        'amount' => 'oi.price * oi.quantity DESC',
-        'student' => 's.full_name ASC',
-        'course' => 'c.title ASC',
-        'status' => 'o.status ASC',
-        default => 'o.ordered_at DESC'
-    };
-
-    // Get transactions with comprehensive data
-    $stmt = $pdo->prepare("
-        SELECT 
-            o.id as order_id,
-            o.ordered_at,
-            o.status,
-            oi.price * oi.quantity as amount,
-            oi.quantity,
-            oi.type,
-            s.id as student_id,
-            s.full_name as student_name,
-            s.email as student_email,
-            c.id as course_id,
-            c.title as course_title,
-            p.name as product_name
-        FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
-        JOIN students s ON o.buyer_id = s.id
-        LEFT JOIN courses c ON oi.course_id = c.id
-        LEFT JOIN products p ON oi.product_id = p.id
-        WHERE $where_clause
-        ORDER BY $order_by
-    ");
-    $stmt->execute($params);
-    $transactions = $stmt->fetchAll();
-
-    // Get statistics
-    $stmt = $pdo->prepare("
-        SELECT 
-            COUNT(DISTINCT o.id) as total_orders,
-            SUM(oi.price * oi.quantity) as total_revenue,
-            COUNT(DISTINCT o.buyer_id) as unique_customers,
-            AVG(oi.price * oi.quantity) as avg_order_value,
-            COUNT(CASE WHEN o.status = 'completed' THEN 1 END) as completed_orders,
-            COUNT(CASE WHEN o.status = 'pending' THEN 1 END) as pending_orders
-        FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
-        LEFT JOIN courses c ON oi.course_id = c.id
-        WHERE c.instructor_id = ?
-    ");
-    $stmt->execute([$instructor_id]);
-    $stats = $stmt->fetch();
-
-    // Get monthly revenue data for chart
-    $stmt = $pdo->prepare("
-        SELECT 
-            DATE_FORMAT(o.ordered_at, '%Y-%m') as month,
-            SUM(oi.price * oi.quantity) as revenue,
-            COUNT(DISTINCT o.id) as orders,
-            COUNT(DISTINCT o.buyer_id) as customers
-        FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
-        LEFT JOIN courses c ON oi.course_id = c.id
-        WHERE c.instructor_id = ? 
-          AND o.status = 'completed'
-          AND YEAR(o.ordered_at) = ?
-        GROUP BY DATE_FORMAT(o.ordered_at, '%Y-%m')
-        ORDER BY month ASC
-    ");
-    $stmt->execute([$instructor_id, $filter_year]);
-    $monthly_data = $stmt->fetchAll();
-
-} catch (PDOException $e) {
-    error_log("Database error in transactions: " . $e->getMessage());
-    $transactions = [];
-    $courses = [];
-    $stats = ['total_orders' => 0, 'total_revenue' => 0, 'unique_customers' => 0, 'avg_order_value' => 0, 'completed_orders' => 0, 'pending_orders' => 0];
-    $monthly_data = [];
 }
+
+/**
+ * Transaction Manager
+ */
+class TransactionManager
+{
+    private $pdo;
+    private $instructor_id;
+
+    public function __construct($pdo, $instructor_id)
+    {
+        $this->pdo = $pdo;
+        $this->instructor_id = $instructor_id;
+    }
+
+    public function getTransactions($filters = [])
+    {
+        $where_conditions = ["(c.instructor_id = ? OR oi.course_id IN (SELECT id FROM courses WHERE instructor_id = ?))"];
+        $params = [$this->instructor_id, $this->instructor_id];
+
+        if (!empty($filters['search'])) {
+            $where_conditions[] = "(s.full_name LIKE ? OR c.title LIKE ? OR o.id LIKE ?)";
+            $params[] = "%{$filters['search']}%";
+            $params[] = "%{$filters['search']}%";
+            $params[] = "%{$filters['search']}%";
+        }
+
+        if (!empty($filters['status'])) {
+            $where_conditions[] = "o.status = ?";
+            $params[] = $filters['status'];
+        }
+
+        if (!empty($filters['type'])) {
+            $where_conditions[] = "oi.type = ?";
+            $params[] = $filters['type'];
+        }
+
+        $where_clause = implode(" AND ", $where_conditions);
+        $order_by = $this->getOrderBy($filters['sort'] ?? 'recent');
+
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT 
+                    o.id as order_id,
+                    o.ordered_at,
+                    o.status,
+                    oi.price * oi.quantity as amount,
+                    oi.quantity,
+                    oi.type,
+                    s.id as student_id,
+                    s.full_name as student_name,
+                    s.email as student_email,
+                    c.id as course_id,
+                    c.title as course_title,
+                    p.name as product_name
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                JOIN students s ON o.buyer_id = s.id
+                LEFT JOIN courses c ON oi.course_id = c.id
+                LEFT JOIN products p ON oi.product_id = p.id
+                WHERE $where_clause
+                ORDER BY $order_by
+                LIMIT 100
+            ");
+            $stmt->execute($params);
+            return $stmt->fetchAll();
+        } catch (PDOException $e) {
+            error_log("Transaction Query Error: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    private function getOrderBy($sort)
+    {
+        return match ($sort) {
+            'recent' => 'o.ordered_at DESC',
+            'oldest' => 'o.ordered_at ASC',
+            'amount_high' => 'oi.price * oi.quantity DESC',
+            'amount_low' => 'oi.price * oi.quantity ASC',
+            'student' => 's.full_name ASC',
+            default => 'o.ordered_at DESC'
+        };
+    }
+}
+
+// ============================================================================
+// MAIN EXECUTION
+// ============================================================================
+
+$analytics = new TransactionAnalytics($pdo, $instructor_id);
+$transactionManager = new TransactionManager($pdo, $instructor_id);
+
+$filters = [
+    'search' => trim($_GET['search'] ?? ''),
+    'status' => $_GET['status'] ?? '',
+    'type' => $_GET['type'] ?? '',
+    'sort' => $_GET['sort'] ?? 'recent',
+    'period' => (int)($_GET['period'] ?? 12)
+];
+
+$stats = $analytics->getOverviewStats();
+$revenueData = $analytics->getRevenueData($filters['period']);
+$transactions = $transactionManager->getTransactions($filters);
+
 ?>
 
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="<?= $_SESSION['user_language'] ?? 'fr' ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transactions | TaaBia</title>
+    <title><?= __('transactions') ?> | TaaBia</title>
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="instructor-styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link rel="stylesheet" href="instructor-styles.css">
+    <link rel="stylesheet" href="../includes/instructor_sidebar.css">
+
+    <style>
+        /* Consistent Professional LMS Design */
+        .instructor-main {
+            margin-left: 280px;
+            padding: var(--spacing-8);
+            background-color: var(--gray-50);
+            min-height: 100vh;
+        }
+
+        @media (max-width: 1024px) {
+            .instructor-main {
+                margin-left: 0;
+                padding: var(--spacing-4);
+            }
+        }
+
+        /* Page Header */
+        .page-header {
+            background: white;
+            padding: 2rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            margin-bottom: 2rem;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .page-header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .page-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin: 0 0 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .page-title i {
+            color: var(--primary-color);
+        }
+
+        .page-subtitle {
+            color: var(--gray-600);
+            font-size: 1rem;
+            margin: 0;
+        }
+
+        .page-actions {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        /* Statistics Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            border-left: 4px solid var(--primary-color);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .stat-card.revenue {
+            border-left-color: var(--success-color);
+        }
+
+        .stat-card.orders {
+            border-left-color: var(--primary-color);
+        }
+
+        .stat-card.customers {
+            border-left-color: var(--info-color);
+        }
+
+        .stat-card.performance {
+            border-left-color: var(--warning-color);
+        }
+
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            color: white;
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+        }
+
+        .stat-icon.revenue {
+            background: linear-gradient(135deg, var(--success-color), var(--success-dark));
+        }
+
+        .stat-icon.orders {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+        }
+
+        .stat-icon.customers {
+            background: linear-gradient(135deg, var(--info-color), #0284c7);
+        }
+
+        .stat-icon.performance {
+            background: linear-gradient(135deg, var(--warning-color), var(--warning-dark));
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin: 0 0 0.25rem 0;
+        }
+
+        .stat-label {
+            color: var(--gray-600);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .stat-change {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .stat-change.positive {
+            color: var(--success-color);
+        }
+
+        .stat-change.neutral {
+            color: var(--gray-500);
+        }
+
+        /* Chart Section */
+        .chart-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-container {
+            background: white;
+            padding: 1.5rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--gray-900);
+            margin: 0;
+        }
+
+        .chart-controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .chart-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--gray-600);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .chart-btn:hover {
+            background: var(--gray-50);
+            border-color: var(--gray-400);
+        }
+
+        .chart-btn.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        /* Filters Section */
+        .filters-section {
+            background: white;
+            padding: 1.5rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            margin-bottom: 2rem;
+        }
+
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            align-items: end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--gray-700);
+        }
+
+        .filter-input {
+            padding: 0.75rem;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .filter-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 1.25rem;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-outline {
+            background: white;
+            color: var(--primary-color);
+            border: 1px solid var(--primary-color);
+        }
+
+        .btn-outline:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        /* Transactions Table */
+        .transactions-table-container {
+            background: white;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .table-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .table-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--gray-900);
+            margin: 0;
+        }
+
+        .transactions-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .transactions-table th {
+            background: var(--gray-50);
+            padding: 1rem 1.5rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--gray-700);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .transactions-table td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--gray-100);
+            color: var(--gray-900);
+            vertical-align: middle;
+        }
+
+        .transactions-table tbody tr:hover {
+            background: var(--gray-50);
+        }
+
+        /* Status Badges */
+        .status-badge {
+            padding: 0.375rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .status-completed {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+        }
+
+        .status-pending {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning-color);
+        }
+
+        .status-cancelled {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+
+        .status-refunded {
+            background: rgba(107, 114, 128, 0.1);
+            color: var(--gray-600);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: var(--gray-500);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .empty-state h3 {
+            color: var(--gray-700);
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .chart-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .page-header-content {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .filters-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .transactions-table {
+                font-size: 0.85rem;
+            }
+
+            .transactions-table th,
+            .transactions-table td {
+                padding: 0.75rem 0.5rem;
+            }
+        }
+    </style>
 </head>
 
 <body>
     <div class="instructor-layout">
         <!-- Sidebar -->
-        <div class="instructor-sidebar">
-            <div class="instructor-sidebar-header">
-                <h2><i class="fas fa-chalkboard-teacher"></i> TaaBia</h2>
-                <p>Espace Formateur</p>
-            </div>
-            
-            <nav class="instructor-nav">
-                <a href="index.php" class="instructor-nav-item">
-                    <i class="fas fa-tachometer-alt"></i>
-                    Dashboard
-                </a>
-                <a href="my_courses.php" class="instructor-nav-item">
-                    <i class="fas fa-book"></i>
-                    Mes cours
-                </a>
-                <a href="add_course.php" class="instructor-nav-item">
-                    <i class="fas fa-plus-circle"></i>
-                    Nouveau cours
-                </a>
-                <a href="add_lesson.php" class="instructor-nav-item">
-                    <i class="fas fa-play-circle"></i>
-                    Ajouter une leçon
-                </a>
-                <a href="students.php" class="instructor-nav-item">
-                    <i class="fas fa-users"></i>
-                    Mes étudiants
-                </a>
-                <a href="validate_submissions.php" class="instructor-nav-item">
-                    <i class="fas fa-check-circle"></i>
-                    Devoirs à valider
-                </a>
-                <a href="earnings.php" class="instructor-nav-item">
-                    <i class="fas fa-chart-line"></i>
-                    Mes gains
-                </a>
-                <a href="transactions.php" class="instructor-nav-item active">
-                    <i class="fas fa-shopping-cart"></i>
-                    Transactions
-                </a>
-                <a href="payouts.php" class="instructor-nav-item">
-                    <i class="fas fa-money-bill-wave"></i>
-                    Paiements
-                </a>
-                <a href="../auth/logout.php" class="instructor-nav-item">
-                    <i class="fas fa-sign-out-alt"></i>
-                    Déconnexion
-                </a>
-            </nav>
-        </div>
+        <?php include '../includes/instructor_sidebar.php'; ?>
 
         <!-- Main Content -->
         <div class="instructor-main">
-            <div class="instructor-header">
-                <h1>Transactions</h1>
-                <p>Gérez et suivez toutes vos transactions</p>
-            </div>
-
-            <!-- Statistics Cards -->
-            <div class="instructor-cards" style="margin-bottom: var(--spacing-6);">
-                <div class="instructor-card">
-                    <div class="instructor-card-header">
-                        <div class="instructor-card-icon primary">
+            <!-- Page Header -->
+            <header class="page-header">
+                <div class="page-header-content">
+                    <div>
+                        <h1 class="page-title">
                             <i class="fas fa-shopping-cart"></i>
+                            <?= __('transactions') ?>
+                        </h1>
+                        <p class="page-subtitle"><?= __('manage_your_sales_and_orders') ?></p>
+                    </div>
+                    <div class="page-actions">
+                        <button class="btn btn-outline" onclick="refreshData()">
+                            <i class="fas fa-sync-alt"></i> <?= __('refresh_data') ?>
+                        </button>
+                        <button class="btn btn-primary" onclick="exportTransactions()">
+                            <i class="fas fa-download"></i> <?= __('export_transactions') ?>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Statistics Grid -->
+            <div class="stats-grid">
+                <div class="stat-card revenue">
+                    <div class="stat-header">
+                        <div class="stat-icon revenue">
+                            <i class="fas fa-dollar-sign"></i>
                         </div>
                     </div>
-                    <div class="instructor-card-title">Total commandes</div>
-                    <div class="instructor-card-value"><?= $stats['total_orders'] ?></div>
-                    <div class="instructor-card-description">Toutes les commandes</div>
+                    <div class="stat-value">$<?= number_format($stats['total_revenue'] ?? 0, 2) ?></div>
+                    <div class="stat-label"><?= __('total_revenue') ?></div>
+                    <div class="stat-change positive">
+                        <i class="fas fa-arrow-up"></i> +12.5% <?= __('this_month') ?>
+                    </div>
                 </div>
 
-                <div class="instructor-card">
-                    <div class="instructor-card-header">
-                        <div class="instructor-card-icon success">
-                            <i class="fas fa-coins"></i>
+                <div class="stat-card orders">
+                    <div class="stat-header">
+                        <div class="stat-icon orders">
+                            <i class="fas fa-shopping-bag"></i>
                         </div>
                     </div>
-                    <div class="instructor-card-title">Revenus totaux</div>
-                    <div class="instructor-card-value"><?= number_format($stats['total_revenue'], 2) ?> GHS</div>
-                    <div class="instructor-card-description">Tous temps confondus</div>
+                    <div class="stat-value"><?= number_format($stats['total_orders'] ?? 0) ?></div>
+                    <div class="stat-label"><?= __('total_orders') ?></div>
+                    <div class="stat-change positive">
+                        <i class="fas fa-check"></i> <?= $stats['completed_orders'] ?? 0 ?> <?= __('completed') ?>
+                    </div>
                 </div>
 
-                <div class="instructor-card">
-                    <div class="instructor-card-header">
-                        <div class="instructor-card-icon info">
+                <div class="stat-card customers">
+                    <div class="stat-header">
+                        <div class="stat-icon customers">
                             <i class="fas fa-users"></i>
                         </div>
                     </div>
-                    <div class="instructor-card-title">Clients uniques</div>
-                    <div class="instructor-card-value"><?= $stats['unique_customers'] ?></div>
-                    <div class="instructor-card-description">Étudiants différents</div>
+                    <div class="stat-value"><?= number_format($stats['unique_customers'] ?? 0) ?></div>
+                    <div class="stat-label"><?= __('unique_customers') ?></div>
+                    <div class="stat-change neutral">
+                        <i class="fas fa-user"></i> <?= __('customers') ?>
+                    </div>
                 </div>
 
-                <div class="instructor-card">
-                    <div class="instructor-card-header">
-                        <div class="instructor-card-icon warning">
-                            <i class="fas fa-chart-line"></i>
+                <div class="stat-card performance">
+                    <div class="stat-header">
+                        <div class="stat-icon performance">
+                            <i class="fas fa-chart-bar"></i>
                         </div>
                     </div>
-                    <div class="instructor-card-title">Panier moyen</div>
-                    <div class="instructor-card-value"><?= number_format($stats['avg_order_value'], 2) ?> GHS</div>
-                    <div class="instructor-card-description">Par commande</div>
+                    <div class="stat-value">$<?= number_format($stats['avg_order_value'] ?? 0, 2) ?></div>
+                    <div class="stat-label"><?= __('avg_order_value') ?></div>
+                    <div class="stat-change neutral">
+                        <i class="fas fa-percentage"></i> <?= __('average') ?>
+                    </div>
                 </div>
             </div>
 
-            <!-- Search and Filters -->
-            <div class="instructor-table-container" style="margin-bottom: var(--spacing-6);">
-                <div style="padding: var(--spacing-6); border-bottom: 1px solid var(--gray-200);">
-                    <h3 style="margin: 0; color: var(--gray-900); font-size: var(--font-size-lg);">
-                        <i class="fas fa-search"></i> Recherche et filtres
-                    </h3>
+            <!-- Chart Section -->
+            <div class="chart-section">
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <h3 class="chart-title"><?= __('revenue_breakdown') ?></h3>
+                        <div class="chart-controls">
+                            <button class="chart-btn <?= $filters['period'] == 12 ? 'active' : '' ?>" data-period="12">12M</button>
+                            <button class="chart-btn <?= $filters['period'] == 6 ? 'active' : '' ?>" data-period="6">6M</button>
+                            <button class="chart-btn <?= $filters['period'] == 3 ? 'active' : '' ?>" data-period="3">3M</button>
+                            <button class="chart-btn <?= $filters['period'] == 1 ? 'active' : '' ?>" data-period="1">1M</button>
+                        </div>
+                    </div>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="revenueChart"></canvas>
+                    </div>
                 </div>
-                
-                <div style="padding: var(--spacing-6);">
-                    <form method="GET" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-4);">
-                        <div class="instructor-form-group">
-                            <label class="instructor-form-label">
-                                <i class="fas fa-search"></i> Rechercher
-                            </label>
-                            <input type="text" name="search" 
-                                   class="instructor-form-input" 
-                                   placeholder="Étudiant, cours ou ID commande"
-                                   value="<?= htmlspecialchars($search) ?>">
-                        </div>
-                        
-                        <div class="instructor-form-group">
-                            <label class="instructor-form-label">
-                                <i class="fas fa-calendar"></i> Mois
-                            </label>
-                            <input type="month" name="month" 
-                                   class="instructor-form-input" 
-                                   value="<?= htmlspecialchars($filter_month) ?>">
-                        </div>
-                        
-                        <div class="instructor-form-group">
-                            <label class="instructor-form-label">
-                                <i class="fas fa-filter"></i> Statut
-                            </label>
-                            <select name="status" class="instructor-form-input instructor-form-select">
-                                <option value="">Tous les statuts</option>
-                                <option value="pending" <?= $filter_status == 'pending' ? 'selected' : '' ?>>En attente</option>
-                                <option value="completed" <?= $filter_status == 'completed' ? 'selected' : '' ?>>Complétées</option>
-                                <option value="cancelled" <?= $filter_status == 'cancelled' ? 'selected' : '' ?>>Annulées</option>
-                            </select>
-                        </div>
-                        
-                        <div class="instructor-form-group">
-                            <label class="instructor-form-label">
-                                <i class="fas fa-tag"></i> Type
-                            </label>
-                            <select name="type" class="instructor-form-input instructor-form-select">
-                                <option value="">Tous les types</option>
-                                <option value="course" <?= $filter_type == 'course' ? 'selected' : '' ?>>Cours</option>
-                                <option value="product" <?= $filter_type == 'product' ? 'selected' : '' ?>>Produits</option>
-                            </select>
-                        </div>
-                        
-                        <div class="instructor-form-group">
-                            <label class="instructor-form-label">
-                                <i class="fas fa-sort"></i> Trier par
-                            </label>
-                            <select name="sort" class="instructor-form-input instructor-form-select">
-                                <option value="recent" <?= $sort_by == 'recent' ? 'selected' : '' ?>>Plus récentes</option>
-                                <option value="oldest" <?= $sort_by == 'oldest' ? 'selected' : '' ?>>Plus anciennes</option>
-                                <option value="amount" <?= $sort_by == 'amount' ? 'selected' : '' ?>>Montant</option>
-                                <option value="student" <?= $sort_by == 'student' ? 'selected' : '' ?>>Étudiant</option>
-                                <option value="course" <?= $sort_by == 'course' ? 'selected' : '' ?>>Cours</option>
-                                <option value="status" <?= $sort_by == 'status' ? 'selected' : '' ?>>Statut</option>
-                            </select>
-                        </div>
-                        
-                        <div style="display: flex; gap: var(--spacing-2); align-items: end;">
-                            <button type="submit" class="instructor-btn instructor-btn-primary">
-                                <i class="fas fa-search"></i>
-                                Filtrer
-                            </button>
-                            
-                            <a href="transactions.php" class="instructor-btn instructor-btn-secondary">
-                                <i class="fas fa-times"></i>
-                                Réinitialiser
-                            </a>
-                        </div>
-                    </form>
+
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <h3 class="chart-title"><?= __('performance_metrics') ?></h3>
+                    </div>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
                 </div>
             </div>
 
-            <!-- Revenue Chart -->
-            <div class="instructor-table-container" style="margin-bottom: var(--spacing-6);">
-                <div style="padding: var(--spacing-6); border-bottom: 1px solid var(--gray-200);">
-                    <h3 style="margin: 0; color: var(--gray-900); font-size: var(--font-size-lg);">
-                        <i class="fas fa-chart-area"></i> Évolution des revenus (<?= $filter_year ?>)
-                    </h3>
-                </div>
-                
-                <div style="padding: var(--spacing-6);">
-                    <canvas id="revenueChart" style="width: 100%; height: 300px;"></canvas>
-                </div>
+            <!-- Filters Section -->
+            <div class="filters-section">
+                <form method="GET" class="filters-grid">
+                    <div class="filter-group">
+                        <label class="filter-label"><?= __('search_transactions') ?></label>
+                        <input type="text" name="search" class="filter-input"
+                            value="<?= htmlspecialchars($filters['search']) ?>"
+                            placeholder="<?= __('search_transactions') ?>">
+                    </div>
+
+                    <div class="filter-group">
+                        <label class="filter-label"><?= __('filter_by_status') ?></label>
+                        <select name="status" class="filter-input">
+                            <option value=""><?= __('all_statuses') ?></option>
+                            <option value="completed" <?= $filters['status'] == 'completed' ? 'selected' : '' ?>>
+                                <?= __('completed') ?>
+                            </option>
+                            <option value="pending" <?= $filters['status'] == 'pending' ? 'selected' : '' ?>>
+                                <?= __('pending') ?>
+                            </option>
+                            <option value="cancelled" <?= $filters['status'] == 'cancelled' ? 'selected' : '' ?>>
+                                <?= __('cancelled') ?>
+                            </option>
+                            <option value="refunded" <?= $filters['status'] == 'refunded' ? 'selected' : '' ?>>
+                                <?= __('refunded') ?>
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label class="filter-label"><?= __('filter_by_type') ?></label>
+                        <select name="type" class="filter-input">
+                            <option value=""><?= __('all_types') ?></option>
+                            <option value="course" <?= $filters['type'] == 'course' ? 'selected' : '' ?>>
+                                <?= __('course') ?>
+                            </option>
+                            <option value="product" <?= $filters['type'] == 'product' ? 'selected' : '' ?>>
+                                <?= __('product') ?>
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label class="filter-label"><?= __('sort_by') ?></label>
+                        <select name="sort" class="filter-input">
+                            <option value="recent" <?= $filters['sort'] == 'recent' ? 'selected' : '' ?>>
+                                <?= __('most_recent') ?>
+                            </option>
+                            <option value="oldest" <?= $filters['sort'] == 'oldest' ? 'selected' : '' ?>>
+                                <?= __('oldest_first') ?>
+                            </option>
+                            <option value="amount_high" <?= $filters['sort'] == 'amount_high' ? 'selected' : '' ?>>
+                                <?= __('highest_amount') ?>
+                            </option>
+                            <option value="student" <?= $filters['sort'] == 'student' ? 'selected' : '' ?>>
+                                <?= __('student_name') ?>
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-filter"></i> <?= __('apply_filters') ?>
+                        </button>
+                    </div>
+                </form>
             </div>
 
-            <!-- Transactions List -->
-            <div class="instructor-table-container">
-                <div style="padding: var(--spacing-6); border-bottom: 1px solid var(--gray-200);">
-                    <h3 style="margin: 0; color: var(--gray-900); font-size: var(--font-size-lg);">
-                        <i class="fas fa-list"></i> Liste des transactions (<?= count($transactions) ?>)
-                    </h3>
+            <!-- Transactions Table -->
+            <div class="transactions-table-container">
+                <div class="table-header">
+                    <h3 class="table-title"><?= __('transaction_history') ?></h3>
+                    <div>
+                        <span style="color: var(--gray-600); font-size: 0.9rem;">
+                            <?= count($transactions) ?> <?= __('transactions_found') ?>
+                        </span>
+                    </div>
                 </div>
-                
-                <?php if (count($transactions) === 0): ?>
-                    <div style="padding: var(--spacing-8); text-align: center; color: var(--gray-500);">
-                        <i class="fas fa-shopping-cart" style="font-size: 3rem; margin-bottom: var(--spacing-4); opacity: 0.5;"></i>
-                        <h3 style="margin: 0 0 var(--spacing-2) 0; color: var(--gray-600);">
-                            Aucune transaction trouvée
-                        </h3>
-                        <p style="margin: 0; color: var(--gray-500);">
-                            <?= $search || $filter_month || $filter_status || $filter_type ? 'Aucune transaction ne correspond à vos critères de recherche.' : 'Aucune transaction enregistrée pour l\'instant.' ?>
-                        </p>
-                        <?php if ($search || $filter_month || $filter_status || $filter_type): ?>
-                            <a href="transactions.php" class="instructor-btn instructor-btn-primary" style="margin-top: var(--spacing-4);">
-                                <i class="fas fa-times"></i>
-                                Réinitialiser les filtres
-                            </a>
-                        <?php endif; ?>
+
+                <?php if (empty($transactions)): ?>
+                    <div class="empty-state">
+                        <i class="fas fa-shopping-cart"></i>
+                        <h3><?= __('no_transactions_found') ?></h3>
+                        <p><?= __('try_adjusting_your_filters') ?></p>
                     </div>
                 <?php else: ?>
-                    <div style="padding: var(--spacing-6);">
-                        <div class="instructor-table">
-                            <table>
-                                <thead>
+                    <div style="overflow-x: auto;">
+                        <table class="transactions-table">
+                            <thead>
+                                <tr>
+                                    <th><?= __('order_id') ?></th>
+                                    <th><?= __('student') ?></th>
+                                    <th><?= __('course_product') ?></th>
+                                    <th><?= __('amount') ?></th>
+                                    <th><?= __('quantity') ?></th>
+                                    <th><?= __('date') ?></th>
+                                    <th><?= __('status') ?></th>
+                                    <th><?= __('actions') ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($transactions as $transaction): ?>
                                     <tr>
-                                        <th>Commande</th>
-                                        <th>Étudiant</th>
-                                        <th>Produit</th>
-                                        <th>Montant</th>
-                                        <th>Date</th>
-                                        <th>Statut</th>
-                                        <th>Actions</th>
+                                        <td>
+                                            <strong>#<?= htmlspecialchars($transaction['order_id']) ?></strong>
+                                        </td>
+                                        <td>
+                                            <div>
+                                                <div style="font-weight: 600;">
+                                                    <?= htmlspecialchars($transaction['student_name']) ?>
+                                                </div>
+                                                <div style="font-size: 0.85rem; color: var(--gray-500);">
+                                                    <?= htmlspecialchars($transaction['student_email']) ?>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <?php if ($transaction['course_title']): ?>
+                                                <div style="font-weight: 600;">
+                                                    <?= htmlspecialchars($transaction['course_title']) ?>
+                                                </div>
+                                                <div style="font-size: 0.85rem; color: var(--gray-500);">
+                                                    <?= __('course') ?>
+                                                </div>
+                                            <?php elseif ($transaction['product_name']): ?>
+                                                <div style="font-weight: 600;">
+                                                    <?= htmlspecialchars($transaction['product_name']) ?>
+                                                </div>
+                                                <div style="font-size: 0.85rem; color: var(--gray-500);">
+                                                    <?= __('product') ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <span style="color: var(--gray-500);">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <strong>$<?= number_format($transaction['amount'], 2) ?></strong>
+                                        </td>
+                                        <td>
+                                            <span style="color: var(--gray-600);"><?= $transaction['quantity'] ?></span>
+                                        </td>
+                                        <td>
+                                            <?= date('M j, Y', strtotime($transaction['ordered_at'])) ?>
+                                        </td>
+                                        <td>
+                                            <span class="status-badge status-<?= $transaction['status'] ?>">
+                                                <?= __($transaction['status']) ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.85rem;"
+                                                onclick="viewDetails(<?= $transaction['order_id'] ?>)">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        </td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($transactions as $transaction): ?>
-                                        <tr>
-                                            <td>
-                                                <strong>#<?= $transaction['order_id'] ?></strong>
-                                            </td>
-                                            <td>
-                                                <div style="display: flex; align-items: center; gap: var(--spacing-2);">
-                                                    <div style="
-                                                        width: 32px; 
-                                                        height: 32px; 
-                                                        background: var(--primary-color); 
-                                                        border-radius: 50%;
-                                                        display: flex;
-                                                        align-items: center;
-                                                        justify-content: center;
-                                                        color: var(--white);
-                                                        font-size: var(--font-size-xs);
-                                                    ">
-                                                        <i class="fas fa-user"></i>
-                                                    </div>
-                                                    <div>
-                                                        <div style="font-weight: 600; color: var(--gray-900);">
-                                                            <?= htmlspecialchars($transaction['student_name']) ?>
-                                                        </div>
-                                                        <div style="font-size: var(--font-size-xs); color: var(--gray-500);">
-                                                            <?= htmlspecialchars($transaction['student_email']) ?>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <div>
-                                                    <div style="font-weight: 600; color: var(--gray-900);">
-                                                        <?= htmlspecialchars($transaction['course_title'] ?? $transaction['product_name'] ?? 'Produit') ?>
-                                                    </div>
-                                                    <div style="font-size: var(--font-size-xs); color: var(--gray-500);">
-                                                        <?= ucfirst($transaction['type']) ?> • Qty: <?= $transaction['quantity'] ?>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <strong style="color: var(--success-color);">
-                                                    <?= number_format($transaction['amount'], 2) ?> GHS
-                                                </strong>
-                                            </td>
-                                            <td><?= date('d/m/Y à H:i', strtotime($transaction['ordered_at'])) ?></td>
-                                            <td>
-                                                <span class="instructor-badge <?= $transaction['status'] == 'completed' ? 'success' : ($transaction['status'] == 'pending' ? 'warning' : 'danger') ?>">
-                                                    <?= ucfirst($transaction['status']) ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <div style="display: flex; gap: var(--spacing-1);">
-                                                    <a href="message_student.php?id=<?= $transaction['student_id'] ?>" 
-                                                       class="instructor-btn instructor-btn-primary"
-                                                       style="padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);">
-                                                        <i class="fas fa-envelope"></i>
-                                                    </a>
-                                                    
-                                                    <?php if ($transaction['course_id']): ?>
-                                                        <a href="course_students.php?course_id=<?= $transaction['course_id'] ?>" 
-                                                           class="instructor-btn instructor-btn-info"
-                                                           style="padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs);">
-                                                            <i class="fas fa-users"></i>
-                                                        </a>
-                                                    <?php endif; ?>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
                 <?php endif; ?>
-            </div>
-
-            <!-- Quick Actions -->
-            <div style="margin-top: var(--spacing-8); display: flex; gap: var(--spacing-4); flex-wrap: wrap;">
-                <a href="earnings.php" class="instructor-btn instructor-btn-secondary">
-                    <i class="fas fa-arrow-left"></i>
-                    Retour aux gains
-                </a>
-                
-                <button onclick="exportTransactions()" class="instructor-btn instructor-btn-success">
-                    <i class="fas fa-download"></i>
-                    Exporter (CSV)
-                </button>
-                
-                <button onclick="window.print()" class="instructor-btn instructor-btn-info">
-                    <i class="fas fa-print"></i>
-                    Imprimer
-                </button>
             </div>
         </div>
     </div>
 
+    <!-- JavaScript -->
     <script>
-        // Revenue Chart
-        const ctx = document.getElementById('revenueChart').getContext('2d');
-        const revenueData = <?= json_encode($monthly_data) ?>;
-        
-        const labels = revenueData.map(item => {
-            const date = new Date(item.month + '-01');
-            return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
-        });
-        
-        const data = revenueData.map(item => item.revenue);
-        
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Revenus mensuels (GHS)',
-                    data: data,
-                    borderColor: 'var(--success-color)',
-                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
+        const revenueData = <?= json_encode($revenueData) ?>;
+        const stats = <?= json_encode($stats) ?>;
+
+        let revenueChart = null;
+        let performanceChart = null;
+
+        function initializeCharts() {
+            // Destroy existing charts if they exist
+            if (revenueChart) {
+                revenueChart.destroy();
+            }
+            if (performanceChart) {
+                performanceChart.destroy();
+            }
+
+            // Revenue Chart
+            const ctx1 = document.getElementById('revenueChart').getContext('2d');
+            revenueChart = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: revenueData.map(item => {
+                        const date = new Date(item.month + '-01');
+                        return date.toLocaleDateString('<?= $_SESSION['user_language'] ?? 'fr' ?>', {
+                            month: 'short',
+                            year: 'numeric'
+                        });
+                    }),
+                    datasets: [{
+                        label: '<?= __('monthly_revenue') ?>',
+                        data: revenueData.map(item => item.revenue),
+                        borderColor: '#2563eb',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#2563eb',
+                        pointBorderColor: 'white',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }]
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return value.toLocaleString() + ' GHS';
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    aspectRatio: 2.5,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            padding: 12,
+                            titleColor: 'white',
+                            bodyColor: 'white',
+                            cornerRadius: 8
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value.toLocaleString();
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
                             }
                         }
                     }
+                }
+            });
+
+            // Performance Chart
+            const ctx2 = document.getElementById('performanceChart').getContext('2d');
+            performanceChart = new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['<?= __('completed') ?>', '<?= __('pending') ?>', '<?= __('cancelled') ?>', '<?= __('refunded') ?>'],
+                    datasets: [{
+                        data: [
+                            stats.completed_orders,
+                            stats.pending_orders,
+                            stats.cancelled_orders,
+                            stats.refunded_orders
+                        ],
+                        backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#6b7280'],
+                        borderWidth: 0
+                    }]
                 },
-                elements: {
-                    point: {
-                        backgroundColor: 'var(--success-color)',
-                        borderColor: 'var(--white)',
-                        borderWidth: 2,
-                        radius: 6
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                usePointStyle: true,
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        }
                     }
                 }
-            }
-        });
-
-        // Export function
-        function exportTransactions() {
-            const table = document.querySelector('table');
-            let csv = [];
-            
-            // Add headers
-            const headers = [];
-            table.querySelectorAll('thead th').forEach(th => {
-                headers.push(th.textContent.trim());
             });
-            csv.push(headers.join(','));
-            
-            // Add data
-            table.querySelectorAll('tbody tr').forEach(row => {
-                const rowData = [];
-                row.querySelectorAll('td').forEach(cell => {
-                    rowData.push(cell.textContent.trim().replace(/,/g, ';'));
-                });
-                csv.push(rowData.join(','));
-            });
-            
-            const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'transactions_<?= date('Y-m-d') ?>.csv';
-            a.click();
         }
 
-        // Auto-submit form when filters change
+        function refreshData() {
+            window.location.reload();
+        }
+
+        function exportTransactions() {
+            alert('<?= __('exporting_transactions') ?>...');
+        }
+
+        function viewDetails(orderId) {
+            alert('<?= __('view_details') ?> #' + orderId);
+        }
+
+        // Chart Period Controls
+        function updateChartPeriod(period) {
+            // Get current URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+
+            // Update or add period parameter
+            urlParams.set('period', period);
+
+            // Reload page with new period
+            window.location.search = urlParams.toString();
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
-            const filterSelects = document.querySelectorAll('select[name="status"], select[name="type"], select[name="sort"]');
-            filterSelects.forEach(select => {
-                select.addEventListener('change', function() {
-                    this.closest('form').submit();
+            initializeCharts();
+
+            // Add event listeners to chart buttons
+            document.querySelectorAll('.chart-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const period = this.getAttribute('data-period');
+                    updateChartPeriod(period);
                 });
-            });
-            
-            // Search with debounce
-            const searchInput = document.querySelector('input[name="search"]');
-            let searchTimeout;
-            searchInput.addEventListener('input', function() {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(() => {
-                    this.closest('form').submit();
-                }, 500);
             });
         });
     </script>
 </body>
+
 </html>
